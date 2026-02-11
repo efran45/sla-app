@@ -109,12 +109,12 @@ def display_sla_dashboard(summary: SLASummary):
     ticket_table.add_column("Category", style="dim")
     ticket_table.add_column("Source of ID", style="dim")
 
-    # Sort results: breached first, then in progress, then met; within each group newest first
-    status_order = {"breached": 0, "in_progress": 1, "met": 2}
-    sorted_results = sorted(
-        summary.results,
-        key=lambda r: (status_order.get(r.status, 3), -r.created_date.timestamp()),
-    )
+    # Sort results by ticket number (numeric part of the key, e.g. ACS-123 → 123)
+    def ticket_sort_key(r):
+        parts = r.source_ticket.rsplit("-", 1)
+        return int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+
+    sorted_results = sorted(summary.results, key=ticket_sort_key)
 
     for i, result in enumerate(sorted_results, 1):
         # Format status
