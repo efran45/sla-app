@@ -10,6 +10,7 @@ import json
 import sys
 from pathlib import Path
 
+from datetime import datetime
 from rich.prompt import Prompt
 from rich.console import Console
 
@@ -77,9 +78,29 @@ def prompt_for_credentials(config: dict) -> dict:
     }
 
 
-def run_sla_checks(client: JiraClient, verbose: bool = False):
+def prompt_for_date_range() -> tuple:
+    """Prompt user for an optional date range to filter ACS tickets."""
+    console.print("\n[bold]Date Range Filter[/]")
+    console.print("[dim]Filter ACS tickets by creation date. Leave blank to include all tickets.[/]\n")
+
+    date_from = Prompt.ask("Start date (YYYY-MM-DD)", default="").strip()
+    date_to = Prompt.ask("End date   (YYYY-MM-DD)", default="").strip()
+
+    # Validate dates
+    for label, val in [("Start date", date_from), ("End date", date_to)]:
+        if val:
+            try:
+                datetime.strptime(val, "%Y-%m-%d")
+            except ValueError:
+                display_error(f"{label} '{val}' is not valid. Expected YYYY-MM-DD. Ignoring filter.")
+                return None, None
+
+    return (date_from or None), (date_to or None)
+
+
+def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None):
     """Run all SLA checks and display results."""
-    checker = SLAChecker(client, verbose=verbose)
+    checker = SLAChecker(client, verbose=verbose, date_from=date_from, date_to=date_to)
 
     # Field IDs are loaded from config.py
     checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
@@ -153,13 +174,19 @@ def main():
     # Save config (without token)
     save_config(config)
 
-    # Run the SLA check
+    # Get optional date range
+    date_from, date_to = prompt_for_date_range()
+
+    # Run the SLA checks
     console.print()
     console.rule("[bold]SLA Results[/]")
+    if date_from or date_to:
+        range_str = f"{date_from or 'beginning'} to {date_to or 'now'}"
+        console.print(f"\n[dim]Filtered to ACS tickets created: {range_str}[/]")
     console.print()
 
     try:
-        run_sla_checks(client, verbose=args.verbose)
+        run_sla_checks(client, verbose=args.verbose, date_from=date_from, date_to=date_to)
     except Exception as e:
         display_error(f"SLA check failed: {e}")
         sys.exit(1)

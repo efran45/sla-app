@@ -23,10 +23,12 @@ console = Console()
 class SLAChecker:
     """Checks SLA compliance by querying Jira."""
 
-    def __init__(self, jira_client: JiraClient, verbose: bool = False):
+    def __init__(self, jira_client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None):
         self.jira = jira_client
         self.field_ids = JIRA_FIELDS.copy()
         self.verbose = verbose
+        self.date_from = date_from
+        self.date_to = date_to
 
     def _log(self, message: str, style: str = "dim"):
         """Print verbose log message."""
@@ -36,6 +38,15 @@ class SLAChecker:
     def set_field_id(self, field_name: str, field_id: str):
         """Set a custom field ID."""
         self.field_ids[field_name] = field_id
+
+    def _date_filter_jql(self) -> str:
+        """Build JQL date filter clause from date range."""
+        parts = []
+        if self.date_from:
+            parts.append(f'created >= "{self.date_from}"')
+        if self.date_to:
+            parts.append(f'created <= "{self.date_to}"')
+        return (" AND " + " AND ".join(parts)) if parts else ""
 
     def check_identification_resolution_config(self) -> SLASummary:
         """
@@ -59,6 +70,7 @@ class SLAChecker:
         jql = (
             f'project = {sla_config["source_project"]} '
             f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
+            f'{self._date_filter_jql()}'
         )
 
         self._log(f"JQL Query: {jql}", "yellow")
@@ -122,6 +134,7 @@ class SLAChecker:
         jql = (
             f'project = {sla_config["source_project"]} '
             f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
+            f'{self._date_filter_jql()}'
         )
 
         self._log(f"[Resolution SLA] JQL Query: {jql}", "yellow")
@@ -162,6 +175,7 @@ class SLAChecker:
         issue_links = fields.get("issuelinks", [])
         target_ticket = None
         resolved_date = None
+        candidates = []
 
         for link in issue_links:
             linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
@@ -175,26 +189,25 @@ class SLAChecker:
             self._log(f"    Checking LPM ticket {linked_key} for 'ready to build' status...", "dim")
 
             try:
-                # Check current status of the LPM ticket
-                linked_ticket_data = self.jira.get_issue(linked_key, fields=["key", "status"])
-                current_status = (linked_ticket_data.get("fields", {}).get("status", {}).get("name", "") or "").lower()
-
-                self._log(f"      Current status: '{current_status}'", "dim")
-
                 # Look for when it transitioned to "ready to build" via changelog
                 transition_date_str = self.jira.get_status_transition_date(linked_key, sla_config["target_status"])
 
                 if transition_date_str:
-                    target_ticket = linked_key
-                    resolved_date = parse_jira_date(transition_date_str)
-                    self._log(f"      MATCH! Reached 'ready to build' on {resolved_date}", "green")
-                    break
+                    transition_date = parse_jira_date(transition_date_str)
+                    candidates.append((linked_key, transition_date))
+                    self._log(f"      MATCH! Candidate: {linked_key} reached 'ready to build' on {transition_date}", "green")
                 else:
                     self._log(f"      No 'ready to build' transition found in changelog", "dim")
 
             except Exception as e:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
+
+        # Pick the most recently transitioned LPM ticket
+        if candidates:
+            candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
+            target_ticket, resolved_date = candidates[0]
+            self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
         # Extract source of identification and category(migrated)
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
@@ -249,8 +262,10 @@ class SLAChecker:
         self._log(f"  Issue links found: {len(issue_links)}", "dim")
 
         # Look for linked LPM ticket with category "break fix"
+        # Collect all matches and pick the most recently created one
         target_ticket = None
         resolved_date = None
+        candidates = []
 
         for link in issue_links:
             linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
@@ -296,16 +311,21 @@ class SLAChecker:
                 self._log(f"      Looking for: '{sla_config['target_category']}'", "yellow")
 
                 if category_value.lower() == sla_config["target_category"].lower():
-                    target_ticket = linked_key
-                    resolved_date = parse_jira_date(linked_ticket_fields.get("created"))
-                    self._log(f"      MATCH! Target ticket: {target_ticket}", "green")
-                    break
+                    lpm_created = parse_jira_date(linked_ticket_fields.get("created"))
+                    candidates.append((linked_key, lpm_created))
+                    self._log(f"      MATCH! Candidate: {linked_key} (created {lpm_created})", "green")
                 else:
                     self._log(f"      No match", "red")
 
             except Exception as e:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
+
+        # Pick the most recently created LPM ticket
+        if candidates:
+            candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
+            target_ticket, resolved_date = candidates[0]
+            self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
         # Extract source of identification and category(migrated)
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
