@@ -16,6 +16,7 @@ console = Console()
 
 def display_sla_dashboard(summary: SLASummary):
     """Display the SLA dashboard in the terminal."""
+    term_width = console.size.width
 
     # Header panel
     header = Panel(
@@ -24,39 +25,41 @@ def display_sla_dashboard(summary: SLASummary):
         box=box.HEAVY,
         style="blue",
         padding=(1, 2),
+        expand=True,
     )
     console.print(header)
     console.print()
 
-    # Summary metrics as side-by-side panels
+    # Summary metrics as side-by-side panels sized to terminal
     resolved_count = summary.met_count + summary.breached_count
+    panel_width = max(12, (term_width - 10) // 4)
 
     met_panel = Panel(
         Text(str(summary.met_count), justify="center", style="green bold"),
         title="[green]Met[/]",
         box=box.ROUNDED,
         border_style="green",
-        width=16,
+        width=panel_width,
     )
     breached_panel = Panel(
         Text(str(summary.breached_count), justify="center", style="red bold"),
         title="[red]Breached[/]",
         box=box.ROUNDED,
         border_style="red",
-        width=16,
+        width=panel_width,
     )
     progress_panel = Panel(
         Text(str(summary.in_progress_count), justify="center", style="yellow bold"),
         title="[yellow]In Progress[/]",
         box=box.ROUNDED,
         border_style="yellow",
-        width=16,
+        width=panel_width,
     )
     total_panel = Panel(
         Text(str(summary.total_count), justify="center", style="bold"),
         title="Total",
         box=box.ROUNDED,
-        width=16,
+        width=panel_width,
     )
 
     console.print(Columns([met_panel, breached_panel, progress_panel, total_panel], padding=(0, 1)))
@@ -78,6 +81,7 @@ def display_sla_dashboard(summary: SLASummary):
             title="[dim]What's below[/]",
             box=box.SIMPLE,
             padding=(0, 2),
+            expand=True,
         ))
     else:
         console.print(Panel(
@@ -88,6 +92,7 @@ def display_sla_dashboard(summary: SLASummary):
             title="[dim]What's below[/]",
             box=box.SIMPLE,
             padding=(0, 2),
+            expand=True,
         ))
 
     # Detailed ticket table
@@ -97,19 +102,20 @@ def display_sla_dashboard(summary: SLASummary):
         header_style="bold cyan",
         row_styles=["", "dim"],
         padding=(0, 1),
+        expand=True,
     )
 
-    ticket_table.add_column("#", style="dim", justify="right")
-    ticket_table.add_column("ACS Ticket", style="bold white")
-    ticket_table.add_column("ACS Created")
-    ticket_table.add_column("LPM Ticket")
-    ticket_table.add_column("LPM Date")
-    ticket_table.add_column("Days", justify="right")
-    ticket_table.add_column("Status", justify="center")
-    ticket_table.add_column("Category", style="dim")
-    ticket_table.add_column("Source of ID", style="dim")
+    ticket_table.add_column("#", style="dim", justify="right", ratio=1)
+    ticket_table.add_column("ACS Ticket", style="bold white", ratio=3)
+    ticket_table.add_column("ACS Created", ratio=3)
+    ticket_table.add_column("LPM Ticket", ratio=3)
+    ticket_table.add_column("LPM Date", ratio=3)
+    ticket_table.add_column("Days", justify="right", ratio=2)
+    ticket_table.add_column("Status", justify="center", ratio=3)
+    ticket_table.add_column("Category", style="dim", ratio=3)
+    ticket_table.add_column("Source of ID", style="dim", ratio=3)
 
-    # Sort results by ticket number (numeric part of the key, e.g. ACS-123 → 123)
+    # Sort results by ticket number (highest first)
     def ticket_sort_key(r):
         parts = r.source_ticket.rsplit("-", 1)
         return int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
@@ -117,7 +123,6 @@ def display_sla_dashboard(summary: SLASummary):
     sorted_results = sorted(summary.results, key=ticket_sort_key, reverse=True)
 
     for i, result in enumerate(sorted_results, 1):
-        # Format status
         if result.is_met:
             status = "[green]Met[/]"
         elif result.is_breached:
@@ -125,7 +130,6 @@ def display_sla_dashboard(summary: SLASummary):
         else:
             status = "[yellow]In Progress[/]"
 
-        # Format days with color and target reference
         if result.days_elapsed > result.target_days:
             days_str = f"[red bold]{result.days_elapsed}[/] [dim]/ {result.target_days}[/]"
         elif result.days_elapsed > result.target_days * 0.8:
@@ -134,8 +138,6 @@ def display_sla_dashboard(summary: SLASummary):
             days_str = f"[green]{result.days_elapsed}[/] [dim]/ {result.target_days}[/]"
 
         target = result.target_ticket or "[dim]--[/]"
-
-        # Format dates
         acs_created = result.created_date.strftime("%b %d, %Y") if result.created_date else "--"
         lpm_date = result.resolved_date.strftime("%b %d, %Y") if result.resolved_date else "[dim]--[/]"
 
