@@ -67,7 +67,7 @@ class SLAChecker:
 
         # Fetch source tickets
         category_field = self.field_ids.get("category", "")
-        fields = ["key", "created", "summary", "issuelinks", health_plan_field, source_of_id_field, category_field]
+        fields = ["key", "created", "summary", "status", "issuelinks", health_plan_field, source_of_id_field, category_field]
         self._log(f"Requesting fields: {fields}", "dim")
 
         source_tickets = self.jira.search_issues(jql, fields=fields)
@@ -85,13 +85,20 @@ class SLAChecker:
                 console.print(f"  Health plan value: {sample_fields.get(health_plan_field)}")
             console.print()
 
-        # Check each ticket for linked LPM ticket with category "break fix"
-        # Only include tickets that have a matching LPM link
+        excluded_statuses = {"closed", "resolved", "canceled"}
+
         for ticket in source_tickets:
             result = self._evaluate_ticket(ticket, sla_config)
-            summary.add_result(result)
+
+            # Exclude tickets with no LPM link if the ACS ticket is closed/resolved/canceled
             if not result.target_ticket:
+                ticket_status = (ticket.get("fields", {}).get("status", {}).get("name", "") or "").lower()
+                if ticket_status in excluded_statuses:
+                    self._log(f"  Excluding {result.source_ticket}: no LPM ticket and status is '{ticket_status}'", "dim")
+                    continue
                 self._log(f"  {result.source_ticket}: no matching LPM ticket with 'break fix' category (tracking as in progress)", "dim")
+
+            summary.add_result(result)
 
         return summary
 

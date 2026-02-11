@@ -49,6 +49,16 @@ def display_sla_dashboard(summary: SLASummary):
     console.print(Panel(metrics_table, title="Summary", box=box.ROUNDED))
     console.print()
 
+    # Description of what's shown
+    console.print(
+        "[dim]Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
+        "with category \"break fix\", or are still open and awaiting an LPM link. "
+        "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
+        "For tickets with an LPM link, days are measured from ACS creation to LPM creation. "
+        "For tickets still awaiting a link, days are measured from ACS creation to today.[/]"
+    )
+    console.print()
+
     # Detailed ticket table
     ticket_table = Table(
         title="Ticket Details",
