@@ -114,7 +114,7 @@ def display_sla_dashboard(summary: SLASummary):
         parts = r.source_ticket.rsplit("-", 1)
         return int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
 
-    sorted_results = sorted(summary.results, key=ticket_sort_key)
+    sorted_results = sorted(summary.results, key=ticket_sort_key, reverse=True)
 
     for i, result in enumerate(sorted_results, 1):
         # Format status
