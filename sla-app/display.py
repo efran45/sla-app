@@ -59,11 +59,12 @@ def display_sla_dashboard(summary: SLASummary):
 
     ticket_table.add_column("Source (ACS)", style="white")
     ticket_table.add_column("ACS Created", style="dim")
-    ticket_table.add_column("Source of ID", style="white")
     ticket_table.add_column("Target (LPM)", style="white")
     ticket_table.add_column("LPM Created", style="dim")
     ticket_table.add_column("Days", justify="right")
     ticket_table.add_column("Status", justify="center")
+    ticket_table.add_column("Category (migrated)", style="white")
+    ticket_table.add_column("Source of ID", style="white")
 
     # Sort results: newest to oldest by ACS created date
     sorted_results = sorted(
@@ -98,11 +99,12 @@ def display_sla_dashboard(summary: SLASummary):
         ticket_table.add_row(
             result.source_ticket,
             acs_created,
-            result.source_of_identification or "[dim]--[/]",
             target,
             lpm_created,
             days_str,
             status,
+            result.category_migrated or "[dim]--[/]",
+            result.source_of_identification or "[dim]--[/]",
         )
 
     console.print(ticket_table)

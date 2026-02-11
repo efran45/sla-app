@@ -85,6 +85,7 @@ class SLAResult:
         target_days: int,
         status: str,  # "met", "breached", "in_progress"
         source_of_identification: str = "",
+        category_migrated: str = "",
     ):
         self.source_ticket = source_ticket
         self.target_ticket = target_ticket
@@ -94,6 +95,7 @@ class SLAResult:
         self.target_days = target_days
         self.status = status
         self.source_of_identification = source_of_identification
+        self.category_migrated = category_migrated
 
     @property
     def is_met(self) -> bool:

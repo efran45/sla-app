@@ -15,7 +15,7 @@ from sla_calculator import (
     parse_jira_date,
     extract_field_value,
 )
-from config import SLA_DEFINITIONS, JIRA_FIELDS, SOURCE_OF_ID_FIELD_ID
+from config import SLA_DEFINITIONS, JIRA_FIELDS, SOURCE_OF_ID_FIELD_ID, CATEGORY_FIELD_ID
 
 console = Console()
 
@@ -66,7 +66,8 @@ class SLAChecker:
         source_of_id_field = self.field_ids.get("source_of_identification", "")
 
         # Fetch source tickets
-        fields = ["key", "created", "summary", "issuelinks", health_plan_field, source_of_id_field]
+        category_field = self.field_ids.get("category", "")
+        fields = ["key", "created", "summary", "issuelinks", health_plan_field, source_of_id_field, category_field]
         self._log(f"Requesting fields: {fields}", "dim")
 
         source_tickets = self.jira.search_issues(jql, fields=fields)
@@ -173,8 +174,9 @@ class SLAChecker:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
 
-        # Extract source of identification
+        # Extract source of identification and category(migrated)
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
+        category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
 
         # Calculate days elapsed
         if resolved_date:
@@ -209,4 +211,5 @@ class SLAChecker:
             target_days=target_days,
             status=status,
             source_of_identification=source_of_id,
+            category_migrated=category_migrated,
         )
