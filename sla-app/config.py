@@ -35,6 +35,17 @@ SLA_DEFINITIONS = {
         "target_days": 30,  # Business days
         "use_business_days": True,
     },
+    "resolution_config": {
+        "name": "Resolution of Configuration Issues",
+        "description": "Time from ACS ticket creation to linked LPM ticket reaching 'ready to build' status",
+        "source_project": PROJECT_A,
+        "target_project": PROJECT_B,
+        "health_plan_field": "Health plan (migrated)",
+        "health_plan_value": "BCBSLA",
+        "target_status": "ready to build",
+        "target_days": 60,  # Business days
+        "use_business_days": True,
+    },
 }
 
 # Jira field mapping (uses the constants above)

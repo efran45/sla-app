@@ -102,6 +102,132 @@ class SLAChecker:
 
         return summary
 
+    def check_resolution_config(self) -> SLASummary:
+        """
+        Check the "Resolution of Configuration Issues" SLA.
+
+        SLA: Time from ACS ticket creation (for BCBSLA health plan) to
+             linked LPM ticket reaching status "ready to build" must be <= 60 business days.
+        """
+        sla_config = SLA_DEFINITIONS["resolution_config"]
+        summary = SLASummary(
+            sla_name=sla_config["name"],
+            target_days=sla_config["target_days"],
+        )
+
+        health_plan_field = self.field_ids.get("health_plan", "")
+        source_of_id_field = self.field_ids.get("source_of_identification", "")
+        category_field = self.field_ids.get("category", "")
+
+        jql = (
+            f'project = {sla_config["source_project"]} '
+            f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
+        )
+
+        self._log(f"[Resolution SLA] JQL Query: {jql}", "yellow")
+
+        fields = ["key", "created", "summary", "status", "issuelinks", health_plan_field, source_of_id_field, category_field]
+        source_tickets = self.jira.search_issues(jql, fields=fields)
+
+        self._log(f"[Resolution SLA] Tickets returned from Jira: {len(source_tickets)}", "green")
+
+        excluded_statuses = {"closed", "resolved", "canceled"}
+
+        for ticket in source_tickets:
+            result = self._evaluate_ticket_resolution(ticket, sla_config)
+
+            if not result.target_ticket:
+                ticket_status = (ticket.get("fields", {}).get("status", {}).get("name", "") or "").lower()
+                if ticket_status in excluded_statuses:
+                    self._log(f"  Excluding {result.source_ticket}: no LPM ticket and status is '{ticket_status}'", "dim")
+                    continue
+                self._log(f"  {result.source_ticket}: no LPM ticket at 'ready to build' yet (tracking as in progress)", "dim")
+
+            summary.add_result(result)
+
+        return summary
+
+    def _evaluate_ticket_resolution(self, ticket: dict, sla_config: dict) -> SLAResult:
+        """Evaluate a single ticket against the Resolution SLA (LPM status = 'ready to build')."""
+        ticket_key = ticket.get("key")
+        fields = ticket.get("fields", {})
+
+        self._log(f"\n--- [Resolution] Evaluating {ticket_key} ---", "bold cyan")
+
+        created_str = fields.get("created")
+        created_date = parse_jira_date(created_str)
+        if not created_date:
+            created_date = datetime.now()
+
+        issue_links = fields.get("issuelinks", [])
+        target_ticket = None
+        resolved_date = None
+
+        for link in issue_links:
+            linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
+            if not linked_issue:
+                continue
+
+            linked_key = linked_issue.get("key", "")
+            if not linked_key.startswith(sla_config["target_project"]):
+                continue
+
+            self._log(f"    Checking LPM ticket {linked_key} for 'ready to build' status...", "dim")
+
+            try:
+                # Check current status of the LPM ticket
+                linked_ticket_data = self.jira.get_issue(linked_key, fields=["key", "status"])
+                current_status = (linked_ticket_data.get("fields", {}).get("status", {}).get("name", "") or "").lower()
+
+                self._log(f"      Current status: '{current_status}'", "dim")
+
+                # Look for when it transitioned to "ready to build" via changelog
+                transition_date_str = self.jira.get_status_transition_date(linked_key, sla_config["target_status"])
+
+                if transition_date_str:
+                    target_ticket = linked_key
+                    resolved_date = parse_jira_date(transition_date_str)
+                    self._log(f"      MATCH! Reached 'ready to build' on {resolved_date}", "green")
+                    break
+                else:
+                    self._log(f"      No 'ready to build' transition found in changelog", "dim")
+
+            except Exception as e:
+                self._log(f"      Error fetching linked ticket: {e}", "red")
+                continue
+
+        # Extract source of identification and category(migrated)
+        source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
+        category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
+
+        # Calculate days elapsed
+        if resolved_date:
+            days_elapsed = get_business_days(created_date, resolved_date)
+        else:
+            days_elapsed = get_business_days_elapsed(created_date)
+
+        # Determine status
+        target_days = sla_config["target_days"]
+
+        if target_ticket and resolved_date:
+            status = "met" if days_elapsed <= target_days else "breached"
+        else:
+            status = "breached" if days_elapsed > target_days else "in_progress"
+
+        self._log(f"  Result: {status} ({days_elapsed} days)", "bold")
+
+        return SLAResult(
+            source_ticket=ticket_key,
+            target_ticket=target_ticket,
+            created_date=created_date,
+            resolved_date=resolved_date,
+            days_elapsed=days_elapsed,
+            target_days=target_days,
+            status=status,
+            source_of_identification=source_of_id,
+            category_migrated=category_migrated,
+        )
+
     def _evaluate_ticket(self, ticket: dict, sla_config: dict) -> SLAResult:
         """Evaluate a single ticket against the SLA."""
         ticket_key = ticket.get("key")

@@ -74,6 +74,21 @@ class JiraClient:
         issue = self.get_issue(issue_key, fields=["issuelinks"])
         return issue.get("fields", {}).get("issuelinks", [])
 
+    def get_issue_changelog(self, issue_key: str) -> list[dict]:
+        """Get the changelog for an issue to find status transitions."""
+        endpoint = f"/rest/api/3/issue/{issue_key}/changelog"
+        data = self._make_request(endpoint)
+        return data.get("values", [])
+
+    def get_status_transition_date(self, issue_key: str, target_status: str) -> Optional[str]:
+        """Find the date when an issue first transitioned to a given status."""
+        changelog = self.get_issue_changelog(issue_key)
+        for entry in changelog:
+            for item in entry.get("items", []):
+                if item.get("field") == "status" and (item.get("toString") or "").lower() == target_status.lower():
+                    return entry.get("created")
+        return None
+
     def test_connection(self) -> dict:
         """Test the Jira connection."""
         return self._make_request("/rest/api/3/myself")

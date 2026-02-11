@@ -77,8 +77,8 @@ def prompt_for_credentials(config: dict) -> dict:
     }
 
 
-def run_sla_check(client: JiraClient, verbose: bool = False):
-    """Run the SLA check and display results."""
+def run_sla_checks(client: JiraClient, verbose: bool = False):
+    """Run all SLA checks and display results."""
     checker = SLAChecker(client, verbose=verbose)
 
     # Field IDs are loaded from config.py
@@ -88,14 +88,24 @@ def run_sla_check(client: JiraClient, verbose: bool = False):
     display_info("Fetching tickets from Jira...")
     console.print()
 
-    summary = checker.check_identification_resolution_config()
+    # SLA 1: Identification of Resolution for Configuration Issues (30 days)
+    summary1 = checker.check_identification_resolution_config()
 
-    if summary.total_count == 0:
-        display_info("No tickets found matching the SLA criteria.")
-        display_info("Make sure the 'Health plan (migrated)' field contains 'BCBSLA' on ACS tickets.")
-        return
+    if summary1.total_count == 0:
+        display_info("No tickets found matching the Identification SLA criteria.")
+    else:
+        display_sla_dashboard(summary1)
 
-    display_sla_dashboard(summary)
+    console.rule("[dim]")
+    console.print()
+
+    # SLA 2: Resolution of Configuration Issues (60 days)
+    summary2 = checker.check_resolution_config()
+
+    if summary2.total_count == 0:
+        display_info("No tickets found matching the Resolution SLA criteria.")
+    else:
+        display_sla_dashboard(summary2)
 
 
 def main():
@@ -110,8 +120,9 @@ def main():
     console.print()
     console.rule("[bold blue]Healthcare SLA CLI[/]")
     console.print()
-    console.print("[dim]Identification of Resolution for Configuration Issues[/]")
-    console.print("[dim]ACS → LPM Handoff | BCBSLA | 30 Business Days[/]")
+    console.print("[dim]1. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
+    console.print("[dim]2. Resolution of Configuration Issues | 60 Business Days[/]")
+    console.print("[dim]ACS → LPM Handoff | BCBSLA[/]")
     console.print()
 
     if args.verbose:
@@ -148,7 +159,7 @@ def main():
     console.print()
 
     try:
-        run_sla_check(client, verbose=args.verbose)
+        run_sla_checks(client, verbose=args.verbose)
     except Exception as e:
         display_error(f"SLA check failed: {e}")
         sys.exit(1)
