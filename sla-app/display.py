@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from rich.align import Align
 from rich.columns import Columns
 from rich import box
 
@@ -62,40 +63,37 @@ def display_sla_dashboard(summary: SLASummary):
         width=panel_width,
     )
 
-    console.print(Columns([met_panel, breached_panel, progress_panel, total_panel], padding=(0, 1)))
+    console.print(Align.center(Columns([met_panel, breached_panel, progress_panel, total_panel], padding=(0, 1))))
 
     if resolved_count > 0:
         rate = summary.compliance_rate
         rate_style = "green" if rate >= 90 else "yellow" if rate >= 75 else "red"
-        console.print(f"\n  Compliance Rate: [{rate_style} bold]{rate:.1f}%[/]  [dim]({summary.met_count} of {resolved_count} resolved tickets met SLA)[/]")
+        console.print(Align.center(
+            Text.from_markup(f"Compliance Rate: [{rate_style} bold]{rate:.1f}%[/]  [dim]({summary.met_count} of {resolved_count} resolved tickets met SLA)[/]")
+        ))
 
     console.print()
 
     # Description of what's shown (varies by SLA type)
     if "Identification" in summary.sla_name:
-        console.print(Panel(
-            "[dim]Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
-            "with category \"break fix\", or are still open and awaiting an LPM link.\n"
-            "Tickets without an LPM link that are closed, resolved, or canceled are excluded.\n\n"
-            "Days = ACS creation to LPM creation (or to today if still awaiting a link).[/]",
-            title="[dim]What's below[/]",
-            box=box.SIMPLE,
-            padding=(0, 2),
-            expand=True,
-        ))
+        desc_text = (
+            "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
+            "with category \"break fix\", or are still open and awaiting an LPM link. "
+            "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
+            "Days = ACS creation to LPM creation (or to today if still awaiting a link)."
+        )
     else:
-        console.print(Panel(
-            "[dim]Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
-            "that reached \"ready to build\" status, or are still open and awaiting resolution.\n"
-            "Tickets without an LPM link that are closed, resolved, or canceled are excluded.\n\n"
-            "Days = ACS creation to the date the LPM ticket entered \"ready to build\" (or to today if unresolved).[/]",
-            title="[dim]What's below[/]",
-            box=box.SIMPLE,
-            padding=(0, 2),
-            expand=True,
-        ))
+        desc_text = (
+            "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
+            "that reached \"ready to build\" status, or are still open and awaiting resolution. "
+            "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
+            "Days = ACS creation to the date the LPM ticket entered \"ready to build\" (or to today if unresolved)."
+        )
 
-    # Detailed ticket table
+    console.print(Align.center(Text(desc_text, style="dim", justify="center"), width=min(term_width, 100)))
+    console.print()
+
+    # Detailed ticket table — use no_wrap and min_width to keep rows on one line
     ticket_table = Table(
         box=box.SIMPLE_HEAVY,
         show_lines=False,
@@ -105,15 +103,15 @@ def display_sla_dashboard(summary: SLASummary):
         expand=True,
     )
 
-    ticket_table.add_column("#", style="dim", justify="right", ratio=1)
-    ticket_table.add_column("ACS Ticket", style="bold white", ratio=3)
-    ticket_table.add_column("ACS Created", ratio=3)
-    ticket_table.add_column("LPM Ticket", ratio=3)
-    ticket_table.add_column("LPM Date", ratio=3)
-    ticket_table.add_column("Days", justify="right", ratio=2)
-    ticket_table.add_column("Status", justify="center", ratio=3)
-    ticket_table.add_column("Category", style="dim", ratio=3)
-    ticket_table.add_column("Source of ID", style="dim", ratio=3)
+    ticket_table.add_column("#", style="dim", justify="right", no_wrap=True, min_width=3)
+    ticket_table.add_column("ACS Ticket", style="bold white", no_wrap=True, min_width=10)
+    ticket_table.add_column("ACS Created", no_wrap=True, min_width=12)
+    ticket_table.add_column("LPM Ticket", no_wrap=True, min_width=10)
+    ticket_table.add_column("LPM Date", no_wrap=True, min_width=12)
+    ticket_table.add_column("Days", justify="right", no_wrap=True, min_width=8)
+    ticket_table.add_column("Status", justify="center", no_wrap=True, min_width=11)
+    ticket_table.add_column("Category", style="dim", no_wrap=True)
+    ticket_table.add_column("Source of ID", style="dim", no_wrap=True)
 
     # Sort results by ticket number (highest first)
     def ticket_sort_key(r):
@@ -131,11 +129,11 @@ def display_sla_dashboard(summary: SLASummary):
             status = "[yellow]In Progress[/]"
 
         if result.days_elapsed > result.target_days:
-            days_str = f"[red bold]{result.days_elapsed}[/] [dim]/ {result.target_days}[/]"
+            days_str = f"[red bold]{result.days_elapsed}[/][dim]/{result.target_days}[/]"
         elif result.days_elapsed > result.target_days * 0.8:
-            days_str = f"[yellow]{result.days_elapsed}[/] [dim]/ {result.target_days}[/]"
+            days_str = f"[yellow]{result.days_elapsed}[/][dim]/{result.target_days}[/]"
         else:
-            days_str = f"[green]{result.days_elapsed}[/] [dim]/ {result.target_days}[/]"
+            days_str = f"[green]{result.days_elapsed}[/][dim]/{result.target_days}[/]"
 
         target = result.target_ticket or "[dim]--[/]"
         acs_created = result.created_date.strftime("%b %d, %Y") if result.created_date else "--"
