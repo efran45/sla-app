@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from datetime import datetime
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from rich.console import Console
 
 from config import JIRA_FIELDS
@@ -48,28 +48,40 @@ def save_config(config: dict):
 
 def prompt_for_credentials(config: dict) -> dict:
     """Prompt user for Jira credentials."""
-    console.print("\n[bold]Jira Credentials[/]\n")
-
-    # Show saved values as defaults
     saved_url = config.get("jira_base_url", "")
     saved_email = config.get("jira_email", "")
 
-    base_url = Prompt.ask(
-        "Jira URL",
-        default=saved_url if saved_url else "https://yourcompany.atlassian.net"
-    )
+    if saved_url and saved_email:
+        # Saved credentials found — confirm or re-enter
+        console.print("\n[bold]Saved Credentials[/]\n")
+        console.print(f"  Jira URL: [cyan]{saved_url}[/]")
+        console.print(f"  Email:    [cyan]{saved_email}[/]")
+        console.print()
 
-    email = Prompt.ask(
-        "Email",
-        default=saved_email if saved_email else None
-    )
+        if Confirm.ask("Use these credentials?", default=True):
+            base_url = saved_url
+            email = saved_email
+        else:
+            console.print()
+            base_url = Prompt.ask("Jira URL", default=saved_url)
+            email = Prompt.ask("Email", default=saved_email)
+            config["jira_base_url"] = base_url
+            config["jira_email"] = email
+    else:
+        # No saved credentials — prompt for everything
+        console.print("\n[bold]Jira Credentials[/]\n")
+        base_url = Prompt.ask(
+            "Jira URL",
+            default="https://yourcompany.atlassian.net"
+        )
+        email = Prompt.ask("Email")
+        config["jira_base_url"] = base_url
+        config["jira_email"] = email
 
     # Always prompt for token (don't save it for security)
+    console.print()
     console.print("[dim]Get your API token from: https://id.atlassian.com/manage-profile/security/api-tokens[/]")
     token = Prompt.ask("API Token", password=True)
-
-    config["jira_base_url"] = base_url
-    config["jira_email"] = email
 
     return {
         "base_url": base_url,
