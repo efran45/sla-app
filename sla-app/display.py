@@ -75,7 +75,13 @@ def display_sla_dashboard(summary: SLASummary):
     console.print()
 
     # Description of what's shown (varies by SLA type)
-    if "Identification" in summary.sla_name:
+    if "First Response" in summary.sla_name:
+        desc_text = (
+            "Showing all BCBSLA ACS tickets measuring time from creation to the first "
+            "public comment by an internal (Atlassian) user. "
+            "Elapsed = calendar days/hours/minutes from ACS creation to first response (or to now if no response yet)."
+        )
+    elif "Identification" in summary.sla_name:
         desc_text = (
             "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
             "with category \"break fix\", or are still open and awaiting an LPM link. "
@@ -128,7 +134,15 @@ def display_sla_dashboard(summary: SLASummary):
         else:
             status = "[yellow]In Progress[/]"
 
-        if result.days_elapsed > result.target_days:
+        if result.elapsed_time_str:
+            # Show d/h/m format for first response SLA
+            if result.days_elapsed > result.target_days:
+                days_str = f"[red bold]{result.elapsed_time_str}[/]"
+            elif result.days_elapsed > result.target_days * 0.8:
+                days_str = f"[yellow]{result.elapsed_time_str}[/]"
+            else:
+                days_str = f"[green]{result.elapsed_time_str}[/]"
+        elif result.days_elapsed > result.target_days:
             days_str = f"[red bold]{result.days_elapsed}[/][dim]/{result.target_days}[/]"
         elif result.days_elapsed > result.target_days * 0.8:
             days_str = f"[yellow]{result.days_elapsed}[/][dim]/{result.target_days}[/]"

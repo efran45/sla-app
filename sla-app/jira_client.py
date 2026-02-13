@@ -89,6 +89,12 @@ class JiraClient:
                     return entry.get("created")
         return None
 
+    def get_issue_comments(self, issue_key: str) -> list[dict]:
+        """Get all comments for an issue."""
+        endpoint = f"/rest/api/3/issue/{issue_key}/comment"
+        data = self._make_request(endpoint)
+        return data.get("comments", [])
+
     def test_connection(self) -> dict:
         """Test the Jira connection."""
         return self._make_request("/rest/api/3/myself")

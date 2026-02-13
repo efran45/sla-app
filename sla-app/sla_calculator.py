@@ -72,6 +72,18 @@ def extract_field_value(field, default: str = "Unknown") -> str:
     return str(field)
 
 
+def format_elapsed_time(start: datetime, end: datetime) -> str:
+    """Format the elapsed time between two datetimes as 'Xd Xh Xm'."""
+    delta = end - start
+    if delta.total_seconds() < 0:
+        return "0d 0h 0m"
+    total_minutes = int(delta.total_seconds() // 60)
+    days = total_minutes // (24 * 60)
+    hours = (total_minutes % (24 * 60)) // 60
+    minutes = total_minutes % 60
+    return f"{days}d {hours}h {minutes}m"
+
+
 class SLAResult:
     """Result for a single ticket's SLA evaluation."""
 
@@ -86,6 +98,7 @@ class SLAResult:
         status: str,  # "met", "breached", "in_progress"
         source_of_identification: str = "",
         category_migrated: str = "",
+        elapsed_time_str: Optional[str] = None,
     ):
         self.source_ticket = source_ticket
         self.target_ticket = target_ticket
@@ -96,6 +109,7 @@ class SLAResult:
         self.status = status
         self.source_of_identification = source_of_identification
         self.category_migrated = category_migrated
+        self.elapsed_time_str = elapsed_time_str
 
     @property
     def is_met(self) -> bool:

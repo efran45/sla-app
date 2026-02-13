@@ -140,6 +140,17 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
     else:
         display_sla_dashboard(summary2)
 
+    console.rule("[dim]")
+    console.print()
+
+    # SLA 3: Time to First Response (2 business days)
+    summary3 = checker.check_first_response()
+
+    if summary3.total_count == 0:
+        display_info("No tickets found matching the First Response SLA criteria.")
+    else:
+        display_sla_dashboard(summary3)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Healthcare SLA CLI")
@@ -155,6 +166,7 @@ def main():
     console.print()
     console.print("[dim]1. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
     console.print("[dim]2. Resolution of Configuration Issues | 60 Business Days[/]")
+    console.print("[dim]3. Time to First Response | 2 Business Days[/]")
     console.print("[dim]ACS → LPM Handoff | BCBSLA[/]")
     console.print()
 

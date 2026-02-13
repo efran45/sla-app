@@ -14,6 +14,7 @@ from sla_calculator import (
     get_business_days_elapsed,
     parse_jira_date,
     extract_field_value,
+    format_elapsed_time,
 )
 from config import SLA_DEFINITIONS, JIRA_FIELDS, SOURCE_OF_ID_FIELD_ID, CATEGORY_FIELD_ID
 
@@ -156,6 +157,122 @@ class SLAChecker:
                     continue
                 self._log(f"  {result.source_ticket}: no LPM ticket at 'ready to build' yet (tracking as in progress)", "dim")
 
+            summary.add_result(result)
+
+        return summary
+
+    def check_first_response(self) -> SLASummary:
+        """
+        Check the "Time to First Response" SLA.
+
+        SLA: Time from ACS ticket creation (for BCBSLA health plan) to the first
+             public comment by an internal (Atlassian account type) user must be <= 2 business days.
+        """
+        sla_config = SLA_DEFINITIONS["first_response"]
+        summary = SLASummary(
+            sla_name=sla_config["name"],
+            target_days=sla_config["target_days"],
+        )
+
+        health_plan_field = self.field_ids.get("health_plan", "")
+        source_of_id_field = self.field_ids.get("source_of_identification", "")
+        category_field = self.field_ids.get("category", "")
+
+        jql = (
+            f'project = {sla_config["source_project"]} '
+            f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
+            f'{self._date_filter_jql()}'
+        )
+
+        self._log(f"[First Response SLA] JQL Query: {jql}", "yellow")
+
+        fields = ["key", "created", "summary", "status", health_plan_field, source_of_id_field, category_field]
+        source_tickets = self.jira.search_issues(jql, fields=fields)
+
+        self._log(f"[First Response SLA] Tickets returned from Jira: {len(source_tickets)}", "green")
+
+        for ticket in source_tickets:
+            ticket_key = ticket.get("key")
+            ticket_fields = ticket.get("fields", {})
+
+            self._log(f"\n--- [First Response] Evaluating {ticket_key} ---", "bold cyan")
+
+            created_str = ticket_fields.get("created")
+            created_date = parse_jira_date(created_str)
+            if not created_date:
+                created_date = datetime.now()
+
+            # Fetch comments for this ticket
+            try:
+                comments = self.jira.get_issue_comments(ticket_key)
+            except Exception as e:
+                self._log(f"  Error fetching comments: {e}", "red")
+                comments = []
+
+            self._log(f"  Total comments: {len(comments)}", "dim")
+
+            # Find the earliest public comment from an internal (atlassian) user
+            first_response_date = None
+            for comment in comments:
+                author = comment.get("author", {})
+                account_type = author.get("accountType", "")
+
+                # Only consider internal licensed users
+                if account_type != "atlassian":
+                    continue
+
+                # Check if the comment is public (visible to customers)
+                # jsdPublic == True means it's a public comment in JSM
+                # If jsdPublic is not present, check that visibility is absent (not internal-only)
+                jsd_public = comment.get("jsdPublic")
+                visibility = comment.get("visibility")
+
+                if jsd_public is not None:
+                    if not jsd_public:
+                        continue
+                elif visibility:
+                    # Has a visibility restriction — it's an internal note
+                    continue
+
+                comment_date = parse_jira_date(comment.get("created"))
+                if comment_date and (first_response_date is None or comment_date < first_response_date):
+                    first_response_date = comment_date
+                    self._log(f"  Public internal comment found: {author.get('displayName', 'Unknown')} on {comment_date}", "green")
+
+            # Extract source of identification and category(migrated)
+            source_of_id = extract_field_value(ticket_fields.get(SOURCE_OF_ID_FIELD_ID), default="")
+            category_migrated = extract_field_value(ticket_fields.get(CATEGORY_FIELD_ID), default="")
+
+            # Calculate business days elapsed
+            if first_response_date:
+                days_elapsed = get_business_days(created_date, first_response_date)
+                elapsed_time_str = format_elapsed_time(created_date, first_response_date)
+            else:
+                days_elapsed = get_business_days_elapsed(created_date)
+                elapsed_time_str = format_elapsed_time(created_date, datetime.now())
+
+            # Determine status
+            target_days = sla_config["target_days"]
+
+            if first_response_date:
+                status = "met" if days_elapsed <= target_days else "breached"
+            else:
+                status = "breached" if days_elapsed > target_days else "in_progress"
+
+            self._log(f"  Result: {status} ({days_elapsed} biz days, {elapsed_time_str})", "bold")
+
+            result = SLAResult(
+                source_ticket=ticket_key,
+                target_ticket=None,
+                created_date=created_date,
+                resolved_date=first_response_date,
+                days_elapsed=days_elapsed,
+                target_days=target_days,
+                status=status,
+                source_of_identification=source_of_id,
+                category_migrated=category_migrated,
+                elapsed_time_str=elapsed_time_str,
+            )
             summary.add_result(result)
 
         return summary

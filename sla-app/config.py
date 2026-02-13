@@ -46,6 +46,15 @@ SLA_DEFINITIONS = {
         "target_days": 60,  # Business days
         "use_business_days": True,
     },
+    "first_response": {
+        "name": "Time to First Response",
+        "description": "Time from ACS ticket creation to first public comment by an internal (Atlassian) user",
+        "source_project": PROJECT_A,
+        "health_plan_field": "Health plan (migrated)",
+        "health_plan_value": "BCBSLA",
+        "target_days": 2,  # Business days
+        "use_business_days": True,
+    },
 }
 
 # Jira field mapping (uses the constants above)
