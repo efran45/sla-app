@@ -98,6 +98,7 @@ class SLAResult:
         status: str,  # "met", "breached", "in_progress"
         source_of_identification: str = "",
         category_migrated: str = "",
+        lpm_category: str = "",
         elapsed_time_str: Optional[str] = None,
     ):
         self.source_ticket = source_ticket
@@ -109,6 +110,7 @@ class SLAResult:
         self.status = status
         self.source_of_identification = source_of_identification
         self.category_migrated = category_migrated
+        self.lpm_category = lpm_category
         self.elapsed_time_str = elapsed_time_str
 
     @property

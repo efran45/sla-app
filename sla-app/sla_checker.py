@@ -308,15 +308,24 @@ class SLAChecker:
             self._log(f"    Checking LPM ticket {linked_key} for config done date...", "dim")
 
             try:
-                linked_fields = ["key", "created", config_done_field] if config_done_field else ["key", "created"]
+                category_field = self.field_ids.get("category", "")
+                linked_fields = ["key", "created"]
+                if config_done_field:
+                    linked_fields.append(config_done_field)
+                if category_field:
+                    linked_fields.append(category_field)
                 linked_ticket_data = self.jira.get_issue(linked_key, fields=linked_fields)
                 linked_ticket_fields = linked_ticket_data.get("fields", {})
 
                 config_done_value = linked_ticket_fields.get(config_done_field)
                 config_done_date = parse_jira_date(config_done_value)
 
+                lpm_cat = ""
+                if category_field and category_field in linked_ticket_fields:
+                    lpm_cat = extract_field_value(linked_ticket_fields.get(category_field), default="")
+
                 if config_done_date:
-                    candidates.append((linked_key, config_done_date))
+                    candidates.append((linked_key, config_done_date, lpm_cat))
                     self._log(f"      MATCH! Candidate: {linked_key} config done date: {config_done_date}", "green")
                 else:
                     self._log(f"      No config done date set", "dim")
@@ -326,9 +335,10 @@ class SLAChecker:
                 continue
 
         # Pick the most recent LPM ticket with a config done date
+        lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
-            target_ticket, resolved_date = candidates[0]
+            target_ticket, resolved_date, lpm_category = candidates[0]
             self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
         # Extract source of identification and category(migrated)
@@ -361,6 +371,7 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
+            lpm_category=lpm_category,
         )
 
     def _evaluate_ticket(self, ticket: dict, sla_config: dict) -> SLAResult:
@@ -434,7 +445,7 @@ class SLAChecker:
 
                 if category_value.lower() == sla_config["target_category"].lower():
                     lpm_created = parse_jira_date(linked_ticket_fields.get("created"))
-                    candidates.append((linked_key, lpm_created))
+                    candidates.append((linked_key, lpm_created, category_value))
                     self._log(f"      MATCH! Candidate: {linked_key} (created {lpm_created})", "green")
                 else:
                     self._log(f"      No match", "red")
@@ -444,9 +455,10 @@ class SLAChecker:
                 continue
 
         # Pick the most recently created LPM ticket
+        lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
-            target_ticket, resolved_date = candidates[0]
+            target_ticket, resolved_date, lpm_category = candidates[0]
             self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
         # Extract source of identification and category(migrated)
@@ -487,4 +499,5 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
+            lpm_category=lpm_category,
         )

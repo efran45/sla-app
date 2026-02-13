@@ -111,17 +111,19 @@ def display_sla_dashboard(summary: SLASummary):
         expand=True,
     )
 
+    is_resolution = "Resolution of" in summary.sla_name
+
     ticket_table.add_column("#", style="dim", justify="right", no_wrap=True, min_width=3)
     ticket_table.add_column("ACS Ticket", style="bold white", no_wrap=True, min_width=10)
+    ticket_table.add_column("ACS Category", style="dim", no_wrap=True)
     ticket_table.add_column("ACS Created", no_wrap=True, min_width=18)
     if not is_first_response:
         ticket_table.add_column("LPM Ticket", no_wrap=True, min_width=10)
-    is_resolution = "Resolution of" in summary.sla_name
+        ticket_table.add_column("LPM Category", style="dim", no_wrap=True)
     date_col_name = "Comment Date" if is_first_response else "Config Done Date" if is_resolution else "LPM Date"
     ticket_table.add_column(date_col_name, no_wrap=True, min_width=18)
     ticket_table.add_column("Elapsed" if is_first_response else "Days", justify="right", no_wrap=True, min_width=8)
     ticket_table.add_column("Status", justify="center", no_wrap=True, min_width=11)
-    ticket_table.add_column("Category", style="dim", no_wrap=True)
     ticket_table.add_column("Source of ID", style="dim", no_wrap=True)
 
     # Sort results by ticket number (highest first)
@@ -163,11 +165,11 @@ def display_sla_dashboard(summary: SLASummary):
             ticket_table.add_row(
                 str(i),
                 result.source_ticket,
+                result.category_migrated or "[dim]--[/]",
                 acs_created,
                 comment_date,
                 days_str,
                 status,
-                result.category_migrated or "[dim]--[/]",
                 result.source_of_identification or "[dim]--[/]",
             )
         else:
@@ -177,12 +179,13 @@ def display_sla_dashboard(summary: SLASummary):
             ticket_table.add_row(
                 str(i),
                 result.source_ticket,
+                result.category_migrated or "[dim]--[/]",
                 acs_created,
                 target,
+                result.lpm_category or "[dim]--[/]",
                 lpm_date,
                 days_str,
                 status,
-                result.category_migrated or "[dim]--[/]",
                 result.source_of_identification or "[dim]--[/]",
             )
 
