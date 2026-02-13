@@ -116,7 +116,9 @@ def display_sla_dashboard(summary: SLASummary):
     ticket_table.add_column("ACS Created", no_wrap=True, min_width=18)
     if not is_first_response:
         ticket_table.add_column("LPM Ticket", no_wrap=True, min_width=10)
-    ticket_table.add_column("Comment Date" if is_first_response else "LPM Date", no_wrap=True, min_width=18)
+    is_resolution = "Resolution of" in summary.sla_name
+    date_col_name = "Comment Date" if is_first_response else "Config Done Date" if is_resolution else "LPM Date"
+    ticket_table.add_column(date_col_name, no_wrap=True, min_width=18)
     ticket_table.add_column("Elapsed" if is_first_response else "Days", justify="right", no_wrap=True, min_width=8)
     ticket_table.add_column("Status", justify="center", no_wrap=True, min_width=11)
     ticket_table.add_column("Category", style="dim", no_wrap=True)
