@@ -91,9 +91,9 @@ def display_sla_dashboard(summary: SLASummary):
     else:
         desc_text = (
             "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
-            "that reached \"ready to build\" status, or are still open and awaiting resolution. "
+            "with a \"config done date\", or are still open and awaiting resolution. "
             "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
-            "Days = ACS creation to the date the LPM ticket entered \"ready to build\" (or to today if unresolved)."
+            "Days = ACS creation to the LPM ticket's config done date (or to today if not yet set)."
         )
 
     console.print(Align.center(Text(desc_text, style="dim", justify="center"), width=min(term_width, 100)))

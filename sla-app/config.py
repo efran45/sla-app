@@ -16,6 +16,9 @@ CATEGORY_FIELD_ID = "customfield_10356"     # <-- CHANGE THIS
 
 # "source of identification" field on ACS tickets
 SOURCE_OF_ID_FIELD_ID = "customfield_10358"
+
+# "config done date" field on LPM tickets
+CONFIG_DONE_DATE_FIELD_ID = "customfield_10728"
 # =============================================================================
 
 # Project configuration
@@ -37,12 +40,12 @@ SLA_DEFINITIONS = {
     },
     "resolution_config": {
         "name": "Resolution of Configuration Issues",
-        "description": "Time from ACS ticket creation to linked LPM ticket reaching 'ready to build' status",
+        "description": "Time from ACS ticket creation to 'config done date' on linked LPM ticket",
         "source_project": PROJECT_A,
         "target_project": PROJECT_B,
         "health_plan_field": "Health plan (migrated)",
         "health_plan_value": "BCBSLA",
-        "target_status": "ready to build",
+        "config_done_date_field": CONFIG_DONE_DATE_FIELD_ID,
         "target_days": 60,  # Business days
         "use_business_days": True,
     },
@@ -62,4 +65,5 @@ JIRA_FIELDS = {
     "health_plan": HEALTH_PLAN_FIELD_ID,
     "category": CATEGORY_FIELD_ID,
     "source_of_identification": SOURCE_OF_ID_FIELD_ID,
+    "config_done_date": CONFIG_DONE_DATE_FIELD_ID,
 }

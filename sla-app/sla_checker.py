@@ -120,7 +120,7 @@ class SLAChecker:
         Check the "Resolution of Configuration Issues" SLA.
 
         SLA: Time from ACS ticket creation (for BCBSLA health plan) to
-             linked LPM ticket reaching status "ready to build" must be <= 60 business days.
+             the "config done date" on linked LPM ticket must be <= 60 business days.
         """
         sla_config = SLA_DEFINITIONS["resolution_config"]
         summary = SLASummary(
@@ -155,7 +155,7 @@ class SLAChecker:
                 if ticket_status in excluded_statuses:
                     self._log(f"  Excluding {result.source_ticket}: no LPM ticket and status is '{ticket_status}'", "dim")
                     continue
-                self._log(f"  {result.source_ticket}: no LPM ticket at 'ready to build' yet (tracking as in progress)", "dim")
+                self._log(f"  {result.source_ticket}: no LPM ticket with config done date yet (tracking as in progress)", "dim")
 
             summary.add_result(result)
 
@@ -278,7 +278,7 @@ class SLAChecker:
         return summary
 
     def _evaluate_ticket_resolution(self, ticket: dict, sla_config: dict) -> SLAResult:
-        """Evaluate a single ticket against the Resolution SLA (LPM status = 'ready to build')."""
+        """Evaluate a single ticket against the Resolution SLA (config done date on LPM)."""
         ticket_key = ticket.get("key")
         fields = ticket.get("fields", {})
 
@@ -294,6 +294,8 @@ class SLAChecker:
         resolved_date = None
         candidates = []
 
+        config_done_field = sla_config.get("config_done_date_field", "")
+
         for link in issue_links:
             linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
             if not linked_issue:
@@ -303,24 +305,27 @@ class SLAChecker:
             if not linked_key.startswith(sla_config["target_project"]):
                 continue
 
-            self._log(f"    Checking LPM ticket {linked_key} for 'ready to build' status...", "dim")
+            self._log(f"    Checking LPM ticket {linked_key} for config done date...", "dim")
 
             try:
-                # Look for when it transitioned to "ready to build" via changelog
-                transition_date_str = self.jira.get_status_transition_date(linked_key, sla_config["target_status"])
+                linked_fields = ["key", "created", config_done_field] if config_done_field else ["key", "created"]
+                linked_ticket_data = self.jira.get_issue(linked_key, fields=linked_fields)
+                linked_ticket_fields = linked_ticket_data.get("fields", {})
 
-                if transition_date_str:
-                    transition_date = parse_jira_date(transition_date_str)
-                    candidates.append((linked_key, transition_date))
-                    self._log(f"      MATCH! Candidate: {linked_key} reached 'ready to build' on {transition_date}", "green")
+                config_done_value = linked_ticket_fields.get(config_done_field)
+                config_done_date = parse_jira_date(config_done_value)
+
+                if config_done_date:
+                    candidates.append((linked_key, config_done_date))
+                    self._log(f"      MATCH! Candidate: {linked_key} config done date: {config_done_date}", "green")
                 else:
-                    self._log(f"      No 'ready to build' transition found in changelog", "dim")
+                    self._log(f"      No config done date set", "dim")
 
             except Exception as e:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
 
-        # Pick the most recently transitioned LPM ticket
+        # Pick the most recent LPM ticket with a config done date
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
             target_ticket, resolved_date = candidates[0]
