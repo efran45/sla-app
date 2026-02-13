@@ -121,33 +121,33 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
     display_info("Fetching tickets from Jira...")
     console.print()
 
-    # SLA 1: Identification of Resolution for Configuration Issues (30 days)
-    summary1 = checker.check_identification_resolution_config()
+    # SLA 1: Time to First Response (2 business days)
+    summary1 = checker.check_first_response()
 
     if summary1.total_count == 0:
-        display_info("No tickets found matching the Identification SLA criteria.")
+        display_info("No tickets found matching the First Response SLA criteria.")
     else:
         display_sla_dashboard(summary1)
 
     console.rule("[dim]")
     console.print()
 
-    # SLA 2: Resolution of Configuration Issues (60 days)
-    summary2 = checker.check_resolution_config()
+    # SLA 2: Identification of Resolution for Configuration Issues (30 days)
+    summary2 = checker.check_identification_resolution_config()
 
     if summary2.total_count == 0:
-        display_info("No tickets found matching the Resolution SLA criteria.")
+        display_info("No tickets found matching the Identification SLA criteria.")
     else:
         display_sla_dashboard(summary2)
 
     console.rule("[dim]")
     console.print()
 
-    # SLA 3: Time to First Response (2 business days)
-    summary3 = checker.check_first_response()
+    # SLA 3: Resolution of Configuration Issues (60 days)
+    summary3 = checker.check_resolution_config()
 
     if summary3.total_count == 0:
-        display_info("No tickets found matching the First Response SLA criteria.")
+        display_info("No tickets found matching the Resolution SLA criteria.")
     else:
         display_sla_dashboard(summary3)
 
@@ -164,9 +164,9 @@ def main():
     console.print()
     console.rule("[bold blue]Healthcare SLA CLI[/]")
     console.print()
-    console.print("[dim]1. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
-    console.print("[dim]2. Resolution of Configuration Issues | 60 Business Days[/]")
-    console.print("[dim]3. Time to First Response | 2 Business Days[/]")
+    console.print("[dim]1. Time to First Response | 2 Business Days[/]")
+    console.print("[dim]2. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
+    console.print("[dim]3. Resolution of Configuration Issues | 60 Business Days[/]")
     console.print("[dim]ACS → LPM Handoff | BCBSLA[/]")
     console.print()
 
