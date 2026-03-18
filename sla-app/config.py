@@ -24,6 +24,7 @@ CONFIG_DONE_DATE_FIELD_ID = "customfield_10728"
 # Project configuration
 PROJECT_A = "ACS"  # Source project (tickets start here)
 PROJECT_B = "LPM"  # Target project (linked tickets created here)
+PROJECT_C = "SR"   # Third project (sub-tasks linked to LPM tickets)
 
 # SLA Definitions
 SLA_DEFINITIONS = {
@@ -56,6 +57,17 @@ SLA_DEFINITIONS = {
         "health_plan_field": "Health plan",
         "health_plan_value": "BCBSLA",
         "target_days": 2,  # Business days
+        "use_business_days": True,
+    },
+    "impact_report_delivery": {
+        "name": "Impact Report Delivery",
+        "description": "Time from SR sub-task creation to public comment with impact report attachment on linked ACS ticket",
+        "lpm_project": PROJECT_B,
+        "sr_project": PROJECT_C,
+        "acs_project": PROJECT_A,
+        "health_plan_field": "Health plan",
+        "health_plan_value": "BCBSLA",
+        "target_days": 30,  # Business days
         "use_business_days": True,
     },
 }
