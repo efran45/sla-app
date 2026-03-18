@@ -134,8 +134,7 @@ class SLAChecker:
         self._log(f"Tickets returned from Jira: {len(source_tickets)}", "green")
 
         if self.verbose and source_tickets:
-            console.print("
-[bold]Sample ticket data (first ticket):[/]")
+            console.print("\n[bold]Sample ticket data (first ticket):[/]")
             sample = source_tickets[0]
             console.print(f"  Key: {sample.get('key')}")
             console.print(f"  Fields: {list(sample.get('fields', {}).keys())}")
