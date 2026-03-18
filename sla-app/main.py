@@ -93,7 +93,7 @@ def prompt_for_credentials(config: dict) -> dict:
 def prompt_for_date_range() -> tuple:
     """Prompt user for an optional date range to filter ACS tickets."""
     console.print("\n[bold]Date Range Filter[/]")
-    console.print("[dim]Filter ACS tickets by creation date. Leave blank to include all tickets.[/]\n")
+    console.print("[dim]Filter tickets by creation date. Leave blank to include all tickets.[/]\n")
 
     date_from = Prompt.ask("Start date (YYYY-MM-DD)", default="").strip()
     date_to = Prompt.ask("End date   (YYYY-MM-DD)", default="").strip()
@@ -151,6 +151,17 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
     else:
         display_sla_dashboard(summary3)
 
+    console.rule("[dim]")
+    console.print()
+
+    # SLA 4: Impact Report Delivery (30 business days)
+    summary4 = checker.check_impact_report_delivery()
+
+    if summary4.total_count == 0:
+        display_info("No SR sub-tasks found matching the Impact Report Delivery SLA criteria.")
+    else:
+        display_sla_dashboard(summary4)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Healthcare SLA CLI")
@@ -167,7 +178,8 @@ def main():
     console.print("[dim]1. Time to First Response | 2 Business Days[/]")
     console.print("[dim]2. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
     console.print("[dim]3. Resolution of Configuration Issues | 60 Business Days[/]")
-    console.print("[dim]ACS → LPM Handoff | BCBSLA[/]")
+    console.print("[dim]4. Impact Report Delivery | 30 Business Days[/]")
+    console.print("[dim]ACS → LPM → SR | BCBSLA[/]")
     console.print()
 
     if args.verbose:
@@ -206,7 +218,7 @@ def main():
     console.rule("[bold]SLA Results[/]")
     if date_from or date_to:
         range_str = f"{date_from or 'beginning'} to {date_to or 'now'}"
-        console.print(f"\n[dim]Filtered to ACS tickets created: {range_str}[/]")
+        console.print(f"\n[dim]Filtered to tickets created: {range_str}[/]")
     console.print()
 
     try:
