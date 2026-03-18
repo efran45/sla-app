@@ -83,7 +83,7 @@ class SLAChecker:
         """
         Check if a comment looks like an impact report delivery.
         Matches public comments that have an attachment and mention
-        "impact report" (case-insensitive) in the body text.
+        'impact report' (case-insensitive) in the body text.
         """
         if not self._is_public_comment(comment):
             return False
@@ -108,7 +108,6 @@ class SLAChecker:
             target_days=sla_config["target_days"],
         )
 
-        # Build JQL to find ACS tickets for BCBSLA
         health_plan_field = self.field_ids.get("health_plan", "")
 
         self._log(f"Health plan field ID: {health_plan_field}", "cyan")
@@ -123,8 +122,6 @@ class SLAChecker:
         self._log(f"JQL Query: {jql}", "yellow")
 
         source_of_id_field = self.field_ids.get("source_of_identification", "")
-
-        # Fetch source tickets
         category_field = self.field_ids.get("category", "")
         fields = ["key", "created", "summary", "status", "issuelinks", health_plan_field, source_of_id_field, category_field]
         self._log(f"Requesting fields: {fields}", "dim")
@@ -149,7 +146,6 @@ class SLAChecker:
         for ticket in source_tickets:
             result = self._evaluate_ticket(ticket, sla_config)
 
-            # Exclude tickets with no LPM link if the ACS ticket is closed/resolved/canceled
             if not result.target_ticket:
                 ticket_status = (ticket.get("fields", {}).get("status", {}).get("name", "") or "").lower()
                 if ticket_status in excluded_statuses:
@@ -241,15 +237,13 @@ class SLAChecker:
             ticket_key = ticket.get("key")
             ticket_fields = ticket.get("fields", {})
 
-            self._log(f"
---- [First Response] Evaluating {ticket_key} ---", "bold cyan")
+            self._log(f"\n--- [First Response] Evaluating {ticket_key} ---", "bold cyan")
 
             created_str = ticket_fields.get("created")
             created_date = parse_jira_date(created_str)
             if not created_date:
                 created_date = datetime.now()
 
-            # Fetch comments for this ticket
             try:
                 comments = self.jira.get_issue_comments(ticket_key)
             except Exception as e:
@@ -258,19 +252,14 @@ class SLAChecker:
 
             self._log(f"  Total comments: {len(comments)}", "dim")
 
-            # Find the earliest public comment from an internal (atlassian) user
             first_response_date = None
             for comment in comments:
                 author = comment.get("author", {})
                 account_type = author.get("accountType", "")
 
-                # Only consider internal licensed users
                 if account_type != "atlassian":
                     continue
 
-                # Check if the comment is public (visible to customers)
-                # jsdPublic == True means it's a public comment in JSM
-                # If jsdPublic is not present, check that visibility is absent (not internal-only)
                 jsd_public = comment.get("jsdPublic")
                 visibility = comment.get("visibility")
 
@@ -278,7 +267,6 @@ class SLAChecker:
                     if not jsd_public:
                         continue
                 elif visibility:
-                    # Has a visibility restriction — it's an internal note
                     continue
 
                 comment_date = parse_jira_date(comment.get("created"))
@@ -286,11 +274,9 @@ class SLAChecker:
                     first_response_date = comment_date
                     self._log(f"  Public internal comment found: {author.get('displayName', 'Unknown')} on {comment_date}", "green")
 
-            # Extract source of identification and category(migrated)
             source_of_id = extract_field_value(ticket_fields.get(SOURCE_OF_ID_FIELD_ID), default="")
             category_migrated = extract_field_value(ticket_fields.get(CATEGORY_FIELD_ID), default="")
 
-            # Calculate business days elapsed
             if first_response_date:
                 days_elapsed = get_business_days(created_date, first_response_date)
                 elapsed_time_str = format_elapsed_time(created_date, first_response_date)
@@ -298,7 +284,6 @@ class SLAChecker:
                 days_elapsed = get_business_days_elapsed(created_date)
                 elapsed_time_str = format_elapsed_time(created_date, datetime.now())
 
-            # Determine status
             target_days = sla_config["target_days"]
 
             if first_response_date:
@@ -341,7 +326,6 @@ class SLAChecker:
 
         health_plan_field = self.field_ids.get("health_plan", "")
 
-        # Query LPM tickets filtered by BCBSLA health plan
         jql = (
             f'project = {sla_config["lpm_project"]} '
             f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
@@ -364,8 +348,7 @@ class SLAChecker:
             lpm_fields = lpm_ticket.get("fields", {})
             issue_links = lpm_fields.get("issuelinks", [])
 
-            self._log(f"
---- [Impact Report] Processing LPM {lpm_key} ({len(issue_links)} links) ---", "bold cyan")
+            self._log(f"\n--- [Impact Report] Processing LPM {lpm_key} ({len(issue_links)} links) ---", "bold cyan")
 
             for link in issue_links:
                 linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
@@ -385,17 +368,14 @@ class SLAChecker:
                     )
                     sr_fields = sr_data.get("fields", {})
 
-                    # Must be a sub-task issue type
                     issue_type = sr_fields.get("issuetype", {})
                     is_subtask = issue_type.get("subtask", False) or issue_type.get("name", "").lower() == "sub-task"
                     if not is_subtask:
                         self._log(f"    Skipping {linked_key}: not a sub-task (type: {issue_type.get('name', 'unknown')})", "dim")
                         continue
 
-                    # SLA clock starts at SR sub-task creation
                     sr_created_date = parse_jira_date(sr_fields.get("created")) or datetime.now()
 
-                    # Check if SR ticket is in a done/closed status
                     sr_status = sr_fields.get("status", {})
                     sr_status_category = sr_status.get("statusCategory", {}).get("key", "").lower()
                     sr_status_name = (sr_status.get("name") or "").lower()
@@ -405,7 +385,6 @@ class SLAChecker:
 
                     self._log(f"    SR sub-task {linked_key} | created: {sr_created_date} | status: {sr_status.get('name')} (done: {sr_is_done})", "dim")
 
-                    # Find ACS tickets linked to the SR ticket
                     sr_links = sr_fields.get("issuelinks", [])
                     report_comment_date = None
                     acs_ticket_key = None
@@ -436,7 +415,6 @@ class SLAChecker:
                             self._log(f"      Error fetching comments for {acs_key}: {e}", "red")
                             continue
 
-                    # Calculate SLA
                     if report_comment_date:
                         days_elapsed = get_business_days(sr_created_date, report_comment_date)
                         elapsed_time_str = format_elapsed_time(sr_created_date, report_comment_date)
@@ -452,14 +430,14 @@ class SLAChecker:
                     self._log(f"  Result for {linked_key}: {status} ({days_elapsed} biz days)", "bold")
 
                     result = SLAResult(
-                        source_ticket=linked_key,       # SR sub-task (SLA start)
-                        target_ticket=acs_ticket_key,   # ACS ticket (SLA end)
+                        source_ticket=linked_key,
+                        target_ticket=acs_ticket_key,
                         created_date=sr_created_date,
                         resolved_date=report_comment_date,
                         days_elapsed=days_elapsed,
                         target_days=target_days,
                         status=status,
-                        lpm_category=lpm_key,           # Store originating LPM ticket for reference
+                        lpm_category=lpm_key,
                         elapsed_time_str=elapsed_time_str,
                     )
                     summary.add_result(result)
@@ -475,8 +453,7 @@ class SLAChecker:
         ticket_key = ticket.get("key")
         fields = ticket.get("fields", {})
 
-        self._log(f"
---- [Resolution] Evaluating {ticket_key} ---", "bold cyan")
+        self._log(f"\n--- [Resolution] Evaluating {ticket_key} ---", "bold cyan")
 
         created_str = fields.get("created")
         created_date = parse_jira_date(created_str)
@@ -528,24 +505,20 @@ class SLAChecker:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
 
-        # Pick the most recent LPM ticket with a config done date
         lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
             target_ticket, resolved_date, lpm_category = candidates[0]
             self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
-        # Extract source of identification and category(migrated)
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
 
-        # Calculate days elapsed
         if resolved_date:
             days_elapsed = get_business_days(created_date, resolved_date)
         else:
             days_elapsed = get_business_days_elapsed(created_date)
 
-        # Determine status
         target_days = sla_config["target_days"]
 
         if target_ticket and resolved_date:
@@ -573,24 +546,19 @@ class SLAChecker:
         ticket_key = ticket.get("key")
         fields = ticket.get("fields", {})
 
-        self._log(f"
---- Evaluating {ticket_key} ---", "bold cyan")
+        self._log(f"\n--- Evaluating {ticket_key} ---", "bold cyan")
 
-        # Parse created date
         created_str = fields.get("created")
         created_date = parse_jira_date(created_str)
 
         if not created_date:
-            created_date = datetime.now()  # Fallback
+            created_date = datetime.now()
 
         self._log(f"  Created: {created_date}", "dim")
 
-        # Get issue links
         issue_links = fields.get("issuelinks", [])
         self._log(f"  Issue links found: {len(issue_links)}", "dim")
 
-        # Look for linked LPM ticket with category "break fix"
-        # Collect all matches and pick the most recently created one
         target_ticket = None
         resolved_date = None
         candidates = []
@@ -604,14 +572,12 @@ class SLAChecker:
             linked_key = linked_issue.get("key", "")
             self._log(f"    Found link: {linked_key}", "dim")
 
-            # Check if it's an LPM ticket
             if not linked_key.startswith(sla_config["target_project"]):
                 self._log(f"      Skipped: not an {sla_config['target_project']} ticket", "dim")
                 continue
 
             self._log(f"      Is {sla_config['target_project']} ticket, checking category...", "dim")
 
-            # Fetch the linked ticket to check category
             try:
                 category_field = self.field_ids.get("category", "")
                 linked_fields = ["key", "created", category_field] if category_field else ["key", "created"]
@@ -621,13 +587,11 @@ class SLAChecker:
 
                 self._log(f"      LPM ticket fields: {list(linked_ticket_fields.keys())}", "dim")
 
-                # Check category
                 category_value = ""
                 if category_field and category_field in linked_ticket_fields:
                     category_value = extract_field_value(linked_ticket_fields.get(category_field))
                     self._log(f"      Category field ({category_field}): {category_value}", "dim")
 
-                # Also check for category in any field that might contain it
                 for field_key, field_val in linked_ticket_fields.items():
                     if "category" in field_key.lower():
                         found_value = extract_field_value(field_val)
@@ -649,34 +613,28 @@ class SLAChecker:
                 self._log(f"      Error fetching linked ticket: {e}", "red")
                 continue
 
-        # Pick the most recently created LPM ticket
         lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
             target_ticket, resolved_date, lpm_category = candidates[0]
             self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
 
-        # Extract source of identification and category(migrated)
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
 
-        # Calculate days elapsed
         if resolved_date:
             days_elapsed = get_business_days(created_date, resolved_date)
         else:
             days_elapsed = get_business_days_elapsed(created_date)
 
-        # Determine status
         target_days = sla_config["target_days"]
 
         if target_ticket and resolved_date:
-            # SLA is resolved
             if days_elapsed <= target_days:
                 status = "met"
             else:
                 status = "breached"
         else:
-            # SLA is still in progress
             if days_elapsed > target_days:
                 status = "breached"
             else:
