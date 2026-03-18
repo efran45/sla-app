@@ -8,7 +8,7 @@ To find custom field IDs, look at a Jira ticket's JSON via:
 # =============================================================================
 # JIRA CUSTOM FIELD IDS - UPDATE THESE
 # =============================================================================
-# "Health plan (migrated)" field on ACS tickets
+# "Health plan" field on ACS tickets
 HEALTH_PLAN_FIELD_ID = "customfield_10151"  # <-- CHANGE THIS
 
 # "category" field on LPM tickets
@@ -32,7 +32,7 @@ SLA_DEFINITIONS = {
         "description": "Time from ACS ticket creation to linked LPM ticket with category 'break fix'",
         "source_project": PROJECT_A,
         "target_project": PROJECT_B,
-        "health_plan_field": "Health plan (migrated)",
+        "health_plan_field": "Health plan",
         "health_plan_value": "BCBSLA",
         "target_category": "break fix",
         "target_days": 30,  # Business days
@@ -43,7 +43,7 @@ SLA_DEFINITIONS = {
         "description": "Time from ACS ticket creation to 'config done date' on linked LPM ticket",
         "source_project": PROJECT_A,
         "target_project": PROJECT_B,
-        "health_plan_field": "Health plan (migrated)",
+        "health_plan_field": "Health plan",
         "health_plan_value": "BCBSLA",
         "config_done_date_field": CONFIG_DONE_DATE_FIELD_ID,
         "target_days": 60,  # Business days
@@ -53,7 +53,7 @@ SLA_DEFINITIONS = {
         "name": "Time to First Response",
         "description": "Time from ACS ticket creation to first public comment by an internal (Atlassian) user",
         "source_project": PROJECT_A,
-        "health_plan_field": "Health plan (migrated)",
+        "health_plan_field": "Health plan",
         "health_plan_value": "BCBSLA",
         "target_days": 2,  # Business days
         "use_business_days": True,
