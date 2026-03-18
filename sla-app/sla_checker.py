@@ -448,6 +448,110 @@ class SLAChecker:
 
         return summary
 
+    def get_recent_fix_version_lpm_tickets(self) -> list[dict]:
+        """
+        Fallback for Impact Report SLA when no SR sub-tasks are found via direct links.
+
+        Queries LPM/BCBSLA tickets that have fixVersions set, collects all non-archived
+        versions (past, present, and future), and returns each version with its tickets
+        and all linked ticket keys for visibility.
+        """
+        sla_config = SLA_DEFINITIONS["impact_report_delivery"]
+        health_plan_field = self.field_ids.get("health_plan", "")
+
+        jql = (
+            f'project = {sla_config["lpm_project"]} '
+            f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}" '
+            f'AND fixVersion is not EMPTY'
+        )
+
+        self._log(f"[Fix Versions] JQL: {jql}", "yellow")
+
+        fields = ["key", "summary", "status", "fixVersions", "issuelinks", health_plan_field]
+        tickets = self.jira.search_issues(jql, fields=fields)
+
+        self._log(f"[Fix Versions] Tickets with fixVersions: {len(tickets)}", "green")
+
+        if not tickets:
+            return []
+
+        # Collect unique non-archived versions and their tickets
+        versions = {}        # version_id -> version dict
+        version_tickets = {}  # version_id -> list of ticket dicts
+
+        for ticket in tickets:
+            ticket_fields = ticket.get("fields", {})
+            fix_versions = ticket_fields.get("fixVersions", [])
+
+            # Collect all linked ticket keys
+            links = ticket_fields.get("issuelinks", [])
+            linked_keys = []
+            for link in links:
+                linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
+                if linked_issue:
+                    key = linked_issue.get("key", "")
+                    if key:
+                        linked_keys.append(key)
+
+            ticket_entry = {
+                "key": ticket.get("key"),
+                "summary": (ticket_fields.get("summary") or "").strip(),
+                "status": ticket_fields.get("status", {}).get("name", ""),
+                "linked_keys": linked_keys,
+            }
+
+            for version in fix_versions:
+                version_id = version.get("id")
+                if not version_id or version.get("archived", False):
+                    continue
+
+                if version_id not in versions:
+                    versions[version_id] = version
+                    version_tickets[version_id] = []
+
+                version_tickets[version_id].append(ticket_entry)
+
+        if not versions:
+            return []
+
+        # Sort versions: unreleased first (by release date asc), then released (by release date desc)
+        today = datetime.now().date()
+
+        def parse_release_date(v):
+            rd = v.get("releaseDate")
+            if rd:
+                try:
+                    return datetime.strptime(rd, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            return None
+
+        def version_sort_key(v):
+            rd = parse_release_date(v)
+            released = v.get("released", False)
+            if not released:
+                # Unreleased: sort ascending by release date (soonest first), no-date last
+                return (0, rd or datetime.max.date())
+            else:
+                # Released: sort descending by release date (most recent first)
+                return (1, rd or datetime.min.date())
+
+        sorted_versions = sorted(versions.values(), key=version_sort_key)
+
+        # For released versions, reverse their order so most recent is first in that group
+        unreleased = [v for v in sorted_versions if not v.get("released", False)]
+        released = [v for v in sorted_versions if v.get("released", False)]
+        released.sort(key=lambda v: parse_release_date(v) or datetime.min.date(), reverse=True)
+        final_versions = unreleased + released
+
+        return [
+            {
+                "version": v,
+                "tickets": version_tickets.get(v["id"], []),
+            }
+            for v in final_versions
+        ]
+
     def _evaluate_ticket_resolution(self, ticket: dict, sla_config: dict) -> SLAResult:
         """Evaluate a single ticket against the Resolution SLA (config done date on LPM)."""
         ticket_key = ticket.get("key")
