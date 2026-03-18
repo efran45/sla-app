@@ -19,7 +19,6 @@ def display_sla_dashboard(summary: SLASummary):
     """Display the SLA dashboard in the terminal."""
     term_width = console.size.width
 
-    # Header panel
     header = Panel(
         Text(summary.sla_name, justify="center", style="bold white"),
         subtitle=f"Target: {summary.target_days} Business Days",
@@ -31,7 +30,6 @@ def display_sla_dashboard(summary: SLASummary):
     console.print(header)
     console.print()
 
-    # Summary metrics as side-by-side panels sized to terminal
     resolved_count = summary.met_count + summary.breached_count
     panel_width = max(12, (term_width - 10) // 4)
 
@@ -74,7 +72,6 @@ def display_sla_dashboard(summary: SLASummary):
 
     console.print()
 
-    # Description of what's shown (varies by SLA type)
     if "First Response" in summary.sla_name:
         desc_text = (
             "Showing all BCBSLA ACS tickets measuring time from creation to the first "
@@ -99,8 +96,8 @@ def display_sla_dashboard(summary: SLASummary):
     console.print(Align.center(Text(desc_text, style="dim", justify="center"), width=min(term_width, 100)))
     console.print()
 
-    # Detailed ticket table — use no_wrap and min_width to keep rows on one line
     is_first_response = "First Response" in summary.sla_name
+    is_resolution = "Resolution of" in summary.sla_name
 
     ticket_table = Table(
         box=box.SIMPLE_HEAVY,
@@ -110,8 +107,6 @@ def display_sla_dashboard(summary: SLASummary):
         padding=(0, 1),
         expand=True,
     )
-
-    is_resolution = "Resolution of" in summary.sla_name
 
     ticket_table.add_column("#", style="dim", justify="right", no_wrap=True, min_width=3)
     ticket_table.add_column("ACS Ticket", style="bold white", no_wrap=True, min_width=10)
@@ -126,7 +121,6 @@ def display_sla_dashboard(summary: SLASummary):
     ticket_table.add_column("Status", justify="center", no_wrap=True, min_width=11)
     ticket_table.add_column("Source of ID", style="dim", no_wrap=True)
 
-    # Sort results by ticket number (highest first)
     def ticket_sort_key(r):
         parts = r.source_ticket.rsplit("-", 1)
         return int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
@@ -145,7 +139,6 @@ def display_sla_dashboard(summary: SLASummary):
             status = "[yellow]In Progress[/]"
 
         if result.elapsed_time_str:
-            # Show d/h/m format for first response SLA
             if result.days_elapsed > result.target_days:
                 days_str = f"[red bold]{result.elapsed_time_str}[/]"
             elif result.days_elapsed > result.target_days * 0.8:
@@ -193,6 +186,73 @@ def display_sla_dashboard(summary: SLASummary):
     console.print()
 
 
+def display_fix_version_tickets(version_data: list[dict]):
+    """Display LPM fix version tickets with linked keys when no SR sub-tasks are found."""
+    console.print(Panel(
+        Text(
+            "No SR sub-tasks found linked to any LPM tickets.\n"
+            "Showing all BCBSLA LPM tickets in recent fix versions with their linked ticket keys.",
+            justify="center",
+            style="yellow",
+        ),
+        title="[yellow]Impact Report Delivery — No SR Sub-tasks Found[/]",
+        box=box.HEAVY,
+        border_style="yellow",
+        padding=(1, 2),
+        expand=True,
+    ))
+    console.print()
+
+    if not version_data:
+        console.print("[dim]  No LPM tickets found in any fix version.[/]")
+        console.print()
+        return
+
+    for entry in version_data:
+        version = entry["version"]
+        tickets = entry["tickets"]
+
+        version_name = version.get("name", "Unknown")
+        release_date = version.get("releaseDate", "No date set")
+        released = version.get("released", False)
+        status_label = "[green]Released[/]" if released else "[yellow]Unreleased[/]"
+
+        console.print(
+            f"[bold cyan]{version_name}[/]  {status_label}  "
+            f"[dim]Release date: {release_date}[/]  [dim]({len(tickets)} ticket{'s' if len(tickets) != 1 else ''})[/]"
+        )
+        console.print()
+
+        if not tickets:
+            console.print("  [dim]No BCBSLA tickets in this version.[/]")
+            console.print()
+            continue
+
+        table = Table(
+            box=box.SIMPLE_HEAVY,
+            show_lines=False,
+            header_style="bold cyan",
+            padding=(0, 1),
+            expand=True,
+        )
+        table.add_column("LPM Ticket", style="bold white", no_wrap=True, min_width=12)
+        table.add_column("Status", no_wrap=True, min_width=14)
+        table.add_column("Summary", min_width=30)
+        table.add_column("Linked Tickets", min_width=20)
+
+        for ticket in tickets:
+            linked_str = "  ".join(ticket["linked_keys"]) if ticket["linked_keys"] else "[dim]none[/]"
+            table.add_row(
+                ticket["key"],
+                ticket["status"],
+                ticket["summary"] or "[dim]--[/]",
+                linked_str,
+            )
+
+        console.print(table)
+        console.print()
+
+
 def display_error(message: str):
     """Display an error message."""
     console.print(Panel(
@@ -205,9 +265,9 @@ def display_error(message: str):
 
 def display_info(message: str):
     """Display an info message."""
-    console.print(f"[cyan]ℹ[/] {message}")
+    console.print(f"[cyan]i[/] {message}")
 
 
 def display_success(message: str):
     """Display a success message."""
-    console.print(f"[green]✓[/] {message}")
+    console.print(f"[green]v[/] {message}")
