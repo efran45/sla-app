@@ -20,17 +20,16 @@ from sla_checker import SLAChecker
 from display import (
     console,
     display_sla_dashboard,
+    display_fix_version_tickets,
     display_error,
     display_info,
     display_success,
 )
 
-# Config file location (same directory as script)
 CONFIG_FILE = Path(__file__).parent / ".config.json"
 
 
 def load_config() -> dict:
-    """Load saved configuration."""
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE) as f:
@@ -41,18 +40,15 @@ def load_config() -> dict:
 
 
 def save_config(config: dict):
-    """Save configuration to file."""
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
 
 def prompt_for_credentials(config: dict) -> dict:
-    """Prompt user for Jira credentials."""
     saved_url = config.get("jira_base_url", "")
     saved_email = config.get("jira_email", "")
 
     if saved_url and saved_email:
-        # Saved credentials found — confirm or re-enter
         console.print("\n[bold]Saved Credentials[/]\n")
         console.print(f"  Jira URL: [cyan]{saved_url}[/]")
         console.print(f"  Email:    [cyan]{saved_email}[/]")
@@ -68,17 +64,12 @@ def prompt_for_credentials(config: dict) -> dict:
             config["jira_base_url"] = base_url
             config["jira_email"] = email
     else:
-        # No saved credentials — prompt for everything
         console.print("\n[bold]Jira Credentials[/]\n")
-        base_url = Prompt.ask(
-            "Jira URL",
-            default="https://yourcompany.atlassian.net"
-        )
+        base_url = Prompt.ask("Jira URL", default="https://yourcompany.atlassian.net")
         email = Prompt.ask("Email")
         config["jira_base_url"] = base_url
         config["jira_email"] = email
 
-    # Always prompt for token (don't save it for security)
     console.print()
     console.print("[dim]Get your API token from: https://id.atlassian.com/manage-profile/security/api-tokens[/]")
     token = Prompt.ask("API Token", password=True)
@@ -91,14 +82,12 @@ def prompt_for_credentials(config: dict) -> dict:
 
 
 def prompt_for_date_range() -> tuple:
-    """Prompt user for an optional date range to filter ACS tickets."""
     console.print("\n[bold]Date Range Filter[/]")
     console.print("[dim]Filter tickets by creation date. Leave blank to include all tickets.[/]\n")
 
     date_from = Prompt.ask("Start date (YYYY-MM-DD)", default="").strip()
     date_to = Prompt.ask("End date   (YYYY-MM-DD)", default="").strip()
 
-    # Validate dates
     for label, val in [("Start date", date_from), ("End date", date_to)]:
         if val:
             try:
@@ -111,10 +100,8 @@ def prompt_for_date_range() -> tuple:
 
 
 def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None):
-    """Run all SLA checks and display results."""
     checker = SLAChecker(client, verbose=verbose, date_from=date_from, date_to=date_to)
 
-    # Field IDs are loaded from config.py
     checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
     checker.set_field_id("category", JIRA_FIELDS["category"])
 
@@ -123,7 +110,6 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
 
     # SLA 1: Time to First Response (2 business days)
     summary1 = checker.check_first_response()
-
     if summary1.total_count == 0:
         display_info("No tickets found matching the First Response SLA criteria.")
     else:
@@ -134,7 +120,6 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
 
     # SLA 2: Identification of Resolution for Configuration Issues (30 days)
     summary2 = checker.check_identification_resolution_config()
-
     if summary2.total_count == 0:
         display_info("No tickets found matching the Identification SLA criteria.")
     else:
@@ -145,7 +130,6 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
 
     # SLA 3: Resolution of Configuration Issues (60 days)
     summary3 = checker.check_resolution_config()
-
     if summary3.total_count == 0:
         display_info("No tickets found matching the Resolution SLA criteria.")
     else:
@@ -156,9 +140,11 @@ def run_sla_checks(client: JiraClient, verbose: bool = False, date_from: str = N
 
     # SLA 4: Impact Report Delivery (30 business days)
     summary4 = checker.check_impact_report_delivery()
-
     if summary4.total_count == 0:
-        display_info("No SR sub-tasks found matching the Impact Report Delivery SLA criteria.")
+        display_info("No SR sub-tasks found via direct LPM links. Checking fix versions...")
+        console.print()
+        fix_version_data = checker.get_recent_fix_version_lpm_tickets()
+        display_fix_version_tickets(fix_version_data)
     else:
         display_sla_dashboard(summary4)
 
@@ -179,19 +165,15 @@ def main():
     console.print("[dim]2. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
     console.print("[dim]3. Resolution of Configuration Issues | 60 Business Days[/]")
     console.print("[dim]4. Impact Report Delivery | 30 Business Days[/]")
-    console.print("[dim]ACS → LPM → SR | BCBSLA[/]")
+    console.print("[dim]ACS -> LPM -> SR | BCBSLA[/]")
     console.print()
 
     if args.verbose:
         console.print("[yellow]Verbose mode enabled[/]\n")
 
-    # Load saved config
     config = load_config()
-
-    # Get credentials
     creds = prompt_for_credentials(config)
 
-    # Test connection
     console.print()
     display_info("Connecting to Jira...")
 
@@ -207,13 +189,10 @@ def main():
         display_error(f"Connection failed: {e}")
         sys.exit(1)
 
-    # Save config (without token)
     save_config(config)
 
-    # Get optional date range
     date_from, date_to = prompt_for_date_range()
 
-    # Run the SLA checks
     console.print()
     console.rule("[bold]SLA Results[/]")
     if date_from or date_to:
