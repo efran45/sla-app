@@ -20,12 +20,12 @@ from sla_calculator import SLASummary, SLAResult
 CONFIG_FILE = Path(__file__).parent / ".config.json"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
-C_MET       = "#2ecc71"   # green
-C_BREACHED  = "#e74c3c"   # red
-C_PROGRESS  = "#f39c12"   # amber
-C_NEUTRAL   = "#3498db"   # blue
-C_BG_CARD   = "#1e2130"
-C_DARK      = "#0e1117"
+C_MET       = "#16a34a"   # green
+C_BREACHED  = "#dc2626"   # red
+C_PROGRESS  = "#d97706"   # amber
+C_NEUTRAL   = "#2563eb"   # blue
+C_BG_CARD   = "#ffffff"
+C_DARK      = "#f8fafc"
 
 SLA_LABELS = [
     "Time to\nFirst Response",
@@ -52,17 +52,21 @@ html, body, [class*="css"] { font-family: 'Inter', 'Segoe UI', sans-serif; }
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* Page background */
-.stApp { background-color: #0e1117; }
+/* Page background — light */
+.stApp { background-color: #f1f5f9; }
+section[data-testid="stSidebar"] { background-color: #1e293b !important; }
+section[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+section[data-testid="stSidebar"] .stTextInput input { background: #334155; color: #f1f5f9 !important; border-color: #475569; }
+section[data-testid="stSidebar"] hr { border-color: #334155 !important; }
 
 /* KPI cards */
 .kpi-card {
-    background: linear-gradient(135deg, #1e2130 0%, #262d3f 100%);
+    background: #ffffff;
     border-radius: 14px;
     padding: 22px 18px 18px 18px;
     text-align: center;
-    border-top: 4px solid var(--card-color, #3498db);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    border-top: 4px solid var(--card-color, #2563eb);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
     height: 140px;
     display: flex;
     flex-direction: column;
@@ -72,7 +76,7 @@ footer {visibility: hidden;}
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #8892a4;
+    color: #64748b;
     margin-bottom: 8px;
     font-weight: 600;
 }
@@ -80,18 +84,18 @@ footer {visibility: hidden;}
     font-size: 2.4rem;
     font-weight: 800;
     line-height: 1;
-    color: var(--card-color, #fff);
+    color: var(--card-color, #1e293b);
 }
 .kpi-sub {
     font-size: 0.75rem;
-    color: #8892a4;
+    color: #94a3b8;
     margin-top: 6px;
 }
 
 /* Section header */
 .sla-section-header {
-    background: linear-gradient(90deg, #1e2130 0%, transparent 100%);
-    border-left: 4px solid #3498db;
+    background: linear-gradient(90deg, #e0f2fe 0%, transparent 100%);
+    border-left: 4px solid #2563eb;
     padding: 10px 16px;
     border-radius: 0 8px 8px 0;
     margin: 24px 0 12px 0;
@@ -99,31 +103,17 @@ footer {visibility: hidden;}
 .sla-section-title {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #e8ecf4;
+    color: #1e293b;
     margin: 0;
 }
 .sla-section-sub {
     font-size: 0.78rem;
-    color: #8892a4;
+    color: #64748b;
     margin: 2px 0 0 0;
 }
 
-/* Compliance badge */
-.badge {
-    display: inline-block;
-    padding: 3px 12px;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 700;
-}
-
-/* Status pill in tables */
-.status-met      { color: #2ecc71; font-weight: 700; }
-.status-breached { color: #e74c3c; font-weight: 700; }
-.status-progress { color: #f39c12; font-weight: 700; }
-
 /* Divider */
-hr { border-color: #2a2f45; }
+hr { border-color: #e2e8f0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -168,14 +158,14 @@ def donut_chart(met: int, breached: int, in_progress: int, compliance: float) ->
     # Remove zero slices
     filtered = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
     if not filtered:
-        filtered = [("No Data", 1, "#2a2f45")]
+        filtered = [("No Data", 1, "#e2e8f0")]
     fl, fv, fc = zip(*filtered)
 
     fig = go.Figure(go.Pie(
         labels=fl,
         values=fv,
         hole=0.65,
-        marker=dict(colors=fc, line=dict(color="#0e1117", width=2)),
+        marker=dict(colors=fc, line=dict(color="#f1f5f9", width=2)),
         textinfo="percent",
         textfont=dict(size=12, color="white"),
         hovertemplate="%{label}: %{value} tickets<extra></extra>",
@@ -184,13 +174,13 @@ def donut_chart(met: int, breached: int, in_progress: int, compliance: float) ->
     fig.add_annotation(
         text=f"<b>{compliance:.0f}%</b><br><span style='font-size:10px'>compliant</span>",
         x=0.5, y=0.5, showarrow=False,
-        font=dict(size=16, color="white"),
+        font=dict(size=16, color="#1e293b"),
         align="center",
     )
     fig.update_layout(
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5,
-                    font=dict(color="#8892a4", size=11)),
+                    font=dict(color="#64748b", size=11)),
         margin=dict(t=10, b=10, l=10, r=10),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -229,9 +219,9 @@ def days_bar_chart(results: list[SLAResult], target_days: int) -> go.Figure:
         annotation_position="top right",
     )
     fig.update_layout(
-        xaxis=dict(tickfont=dict(color="#8892a4", size=10), title=None, tickangle=-30),
-        yaxis=dict(tickfont=dict(color="#8892a4"), title="Business Days",
-                   title_font=dict(color="#8892a4"), gridcolor="#2a2f45"),
+        xaxis=dict(tickfont=dict(color="#64748b", size=10), title=None, tickangle=-30),
+        yaxis=dict(tickfont=dict(color="#64748b"), title="Business Days",
+                   title_font=dict(color="#64748b"), gridcolor="#e2e8f0"),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(t=10, b=40, l=40, r=10),
@@ -257,11 +247,11 @@ def overview_bar(summaries: list[SLASummary | None]) -> go.Figure:
 
     fig.update_layout(
         barmode="stack",
-        xaxis=dict(tickfont=dict(color="#e8ecf4", size=12), title=None),
-        yaxis=dict(tickfont=dict(color="#8892a4"), title="Ticket Count",
-                   title_font=dict(color="#8892a4"), gridcolor="#2a2f45"),
+        xaxis=dict(tickfont=dict(color="#1e293b", size=12), title=None),
+        yaxis=dict(tickfont=dict(color="#64748b"), title="Ticket Count",
+                   title_font=dict(color="#64748b"), gridcolor="#e2e8f0"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                    font=dict(color="#8892a4")),
+                    font=dict(color="#64748b")),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(t=40, b=10, l=40, r=10),
@@ -275,16 +265,16 @@ def compliance_gauge(pct: float) -> go.Figure:
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=pct,
-        number=dict(suffix="%", font=dict(size=28, color=color)),
+        number=dict(suffix="%", font=dict(size=28, color="#1e293b")),
         gauge=dict(
-            axis=dict(range=[0, 100], tickcolor="#8892a4", tickfont=dict(color="#8892a4", size=10)),
+            axis=dict(range=[0, 100], tickcolor="#64748b", tickfont=dict(color="#64748b", size=10)),
             bar=dict(color=color, thickness=0.25),
-            bgcolor="#1e2130",
+            bgcolor="#f8fafc",
             borderwidth=0,
             steps=[
-                dict(range=[0, 70],  color="#2a0a0a"),
-                dict(range=[70, 90], color="#2a1f0a"),
-                dict(range=[90, 100], color="#0a2a12"),
+                dict(range=[0, 70],  color="#fee2e2"),
+                dict(range=[70, 90], color="#fef9c3"),
+                dict(range=[90, 100], color="#dcfce7"),
             ],
             threshold=dict(line=dict(color=color, width=3), thickness=0.75, value=pct),
         ),
@@ -334,8 +324,8 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1: kpi_card("Total Tickets", str(summary.total_count), color=C_NEUTRAL)
     with c2: kpi_card("Met SLA", str(summary.met_count), color=C_MET)
-    with c3: kpi_card("Breached", str(summary.breached_count), color=C_BREACHED if summary.breached_count else "#2a2f45")
-    with c4: kpi_card("In Progress", str(summary.in_progress_count), color=C_PROGRESS if summary.in_progress_count else "#2a2f45")
+    with c3: kpi_card("Breached", str(summary.breached_count), color=C_BREACHED if summary.breached_count else "#e2e8f0")
+    with c4: kpi_card("In Progress", str(summary.in_progress_count), color=C_PROGRESS if summary.in_progress_count else "#e2e8f0")
     with c5: kpi_card("Compliance Rate", f"{compliance:.0f}%", sub=f"Target: {target_days}d", color=cc)
 
     # Charts row
@@ -343,9 +333,9 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     with chart_col:
         bar = days_bar_chart(summary.results, target_days)
         if bar:
-            st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False}, key=f"bar_{sla_num}")
     with gauge_col:
-        st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False}, key=f"gauge_{sla_num}")
 
     # Tables
     tab_b, tab_p, tab_m = st.tabs([
@@ -400,7 +390,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-<div style='color:#8892a4;font-size:0.72rem;line-height:1.6'>
+<div style='color:#64748b;font-size:0.72rem;line-height:1.6'>
 <b>SLA Targets</b><br>
 ⏱ First Response: 2 bd<br>
 🔍 ID Resolution: 30 bd<br>
@@ -415,16 +405,16 @@ st.markdown("""
 <h1 style='font-size:2rem;font-weight:800;margin-bottom:2px'>
   🏥 Healthcare SLA Dashboard
 </h1>
-<p style='color:#8892a4;margin-top:0'>BCBSLA &nbsp;·&nbsp; ACS → LPM → SR &nbsp;·&nbsp; Business-day tracking</p>
+<p style='color:#64748b;margin-top:0'>BCBSLA &nbsp;·&nbsp; ACS → LPM → SR &nbsp;·&nbsp; Business-day tracking</p>
 """, unsafe_allow_html=True)
 
 if not run_btn:
     st.markdown("---")
     st.markdown("""
-<div style='background:linear-gradient(135deg,#1e2130,#262d3f);border-radius:14px;padding:32px;text-align:center;border:1px solid #2a2f45'>
+<div style='background:linear-gradient(135deg,#ffffff,#f1f5f9);border-radius:14px;padding:32px;text-align:center;border:1px solid #e2e8f0'>
   <div style='font-size:3rem;margin-bottom:12px'>📋</div>
-  <h3 style='color:#e8ecf4;margin:0 0 8px 0'>Ready to run</h3>
-  <p style='color:#8892a4;margin:0'>Enter your Jira credentials in the sidebar and click <b style='color:#3498db'>▶ Run SLA Checks</b></p>
+  <h3 style='color:#1e293b;margin:0 0 8px 0'>Ready to run</h3>
+  <p style='color:#64748b;margin:0'>Enter your Jira credentials in the sidebar and click <b style='color:#2563eb'>▶ Run SLA Checks</b></p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -497,9 +487,9 @@ progress_bar.empty()
 st.markdown("---")
 st.markdown(f"""
 <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>
-  <h2 style='margin:0;font-size:1.3rem;color:#e8ecf4'>Executive Summary</h2>
-  <span style='color:#8892a4;font-size:0.8rem'>
-    Connected as <b style='color:#3498db'>{user_info.get("displayName", jira_email)}</b>
+  <h2 style='margin:0;font-size:1.3rem;color:#1e293b'>Executive Summary</h2>
+  <span style='color:#64748b;font-size:0.8rem'>
+    Connected as <b style='color:#2563eb'>{user_info.get("displayName", jira_email)}</b>
     {"&nbsp;·&nbsp; " + date_from_str + " → " + (date_to_str or "today") if date_from_str else ""}
   </span>
 </div>
@@ -528,12 +518,12 @@ for i, (s, label, target) in enumerate(zip(summaries, SLA_LABELS, SLA_TARGETS)):
         elif errors[i]:
             kpi_card(label.replace("\n", " "), "ERR", sub="See below", color=C_BREACHED)
         else:
-            kpi_card(label.replace("\n", " "), "—", sub="No data", color="#2a2f45")
+            kpi_card(label.replace("\n", " "), "—", sub="No data", color="#e2e8f0")
 
 # Overview stacked bar
 if any(s and s.total_count > 0 for s in summaries):
     st.markdown("#### Ticket Volume by SLA")
-    st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False}, key="overview_bar")
 
 st.markdown("---")
 
