@@ -61,12 +61,15 @@ SLA_DEFINITIONS = {
     },
     "impact_report_delivery": {
         "name": "Impact Report Delivery",
-        "description": "Time from SR sub-task creation to public comment with impact report attachment on linked ACS ticket",
+        "description": (
+            "Time from SR sub-task creation (child of SR ticket linked to LA Blue LPM ticket) "
+            "to public comment with impact report attachment on linked ACS ticket"
+        ),
         "lpm_project": PROJECT_B,
         "sr_project": PROJECT_C,
         "acs_project": PROJECT_A,
         "health_plan_field": "Health plan",
-        "health_plan_value": "BCBSLA",
+        "health_plan_value": "LA Blue",
         "target_days": 30,  # Business days
         "use_business_days": True,
     },

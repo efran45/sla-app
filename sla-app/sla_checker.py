@@ -95,6 +95,159 @@ class SLAChecker:
         has_attachment = self._adf_has_media(body)
         return has_keywords and has_attachment
 
+    def check_impact_report_delivery(self) -> SLASummary:
+        """
+        Check the "Impact Report Delivery" SLA.
+
+        Chain: LPM (LA Blue health plan) -> SR ticket linked with any link type
+               -> SR ticket has a sub-task -> ACS ticket linked to SR
+               -> public comment with impact report attachment on ACS ticket
+
+        SLA: Time from SR sub-task creation to impact report comment on ACS ticket
+             must be <= 30 business days.
+        """
+        sla_config = SLA_DEFINITIONS["impact_report_delivery"]
+        summary = SLASummary(
+            sla_name=sla_config["name"],
+            target_days=sla_config["target_days"],
+        )
+
+        health_plan_field = self.field_ids.get("health_plan", "")
+
+        jql = (
+            f'project = {sla_config["lpm_project"]} '
+            f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
+            f'{self._date_filter_jql()}'
+        )
+
+        self._log(f"[Impact Report SLA] JQL Query: {jql}", "yellow")
+
+        fields = ["key", "created", "summary", "status", "issuelinks", health_plan_field]
+        lpm_tickets = self.jira.search_issues(jql, fields=fields)
+
+        self._log(f"[Impact Report SLA] LPM tickets returned: {len(lpm_tickets)}", "green")
+
+        sr_project = sla_config["sr_project"]
+        acs_project = sla_config["acs_project"]
+        target_days = sla_config["target_days"]
+
+        for lpm_ticket in lpm_tickets:
+            lpm_key = lpm_ticket.get("key")
+            lpm_fields = lpm_ticket.get("fields", {})
+            issue_links = lpm_fields.get("issuelinks", [])
+
+            self._log(f"\n--- [Impact Report] Processing LPM {lpm_key} ({len(issue_links)} links) ---", "bold cyan")
+
+            for link in issue_links:
+                linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
+                if not linked_issue:
+                    continue
+
+                linked_key = linked_issue.get("key", "")
+                if not linked_key.startswith(sr_project):
+                    continue
+
+                self._log(f"  Found SR ticket: {linked_key}", "dim")
+
+                try:
+                    sr_data = self.jira.get_issue(
+                        linked_key,
+                        fields=["key", "created", "summary", "status", "issuelinks", "subtasks"],
+                    )
+                    sr_fields = sr_data.get("fields", {})
+
+                    subtasks = sr_fields.get("subtasks", [])
+                    if not subtasks:
+                        self._log(f"    Skipping {linked_key}: has no sub-tasks", "dim")
+                        continue
+
+                    self._log(f"    SR ticket {linked_key} has {len(subtasks)} sub-task(s)", "dim")
+
+                    # Find the earliest sub-task creation date as the SLA start
+                    earliest_subtask_key = None
+                    earliest_subtask_date = None
+
+                    for subtask in subtasks:
+                        subtask_key = subtask.get("key", "")
+                        if not subtask_key:
+                            continue
+                        try:
+                            subtask_data = self.jira.get_issue(subtask_key, fields=["key", "created"])
+                            subtask_created = parse_jira_date(subtask_data.get("fields", {}).get("created"))
+                            if subtask_created and (earliest_subtask_date is None or subtask_created < earliest_subtask_date):
+                                earliest_subtask_date = subtask_created
+                                earliest_subtask_key = subtask_key
+                        except Exception as e:
+                            self._log(f"    Error fetching sub-task {subtask_key}: {e}", "red")
+                            continue
+
+                    if not earliest_subtask_date:
+                        self._log(f"    Could not determine sub-task creation date for {linked_key}, skipping", "dim")
+                        continue
+
+                    self._log(f"    Using sub-task {earliest_subtask_key} created: {earliest_subtask_date}", "dim")
+
+                    # Find ACS tickets linked to the SR ticket and look for impact report comment
+                    sr_links = sr_fields.get("issuelinks", [])
+                    report_comment_date = None
+                    acs_ticket_key = None
+
+                    for sr_link in sr_links:
+                        acs_issue = sr_link.get("outwardIssue") or sr_link.get("inwardIssue")
+                        if not acs_issue:
+                            continue
+                        acs_key = acs_issue.get("key", "")
+                        if not acs_key.startswith(acs_project):
+                            continue
+
+                        self._log(f"    Found ACS ticket linked to SR: {acs_key}", "dim")
+
+                        try:
+                            comments = self.jira.get_issue_comments(acs_key)
+                            self._log(f"      {len(comments)} comments on {acs_key}", "dim")
+
+                            for comment in comments:
+                                if self._comment_is_impact_report(comment):
+                                    comment_date = parse_jira_date(comment.get("created"))
+                                    if comment_date and (report_comment_date is None or comment_date < report_comment_date):
+                                        report_comment_date = comment_date
+                                        acs_ticket_key = acs_key
+                                        self._log(f"      MATCH! Impact report comment on {acs_key} at {comment_date}", "green")
+
+                        except Exception as e:
+                            self._log(f"      Error fetching comments for {acs_key}: {e}", "red")
+                            continue
+
+                    if report_comment_date:
+                        days_elapsed = get_business_days(earliest_subtask_date, report_comment_date)
+                    else:
+                        days_elapsed = get_business_days_elapsed(earliest_subtask_date)
+
+                    if report_comment_date:
+                        status = "met" if days_elapsed <= target_days else "breached"
+                    else:
+                        status = "breached" if days_elapsed > target_days else "in_progress"
+
+                    self._log(f"  Result for {linked_key}: {status} ({days_elapsed} biz days)", "bold")
+
+                    result = SLAResult(
+                        source_ticket=earliest_subtask_key,
+                        target_ticket=acs_ticket_key,
+                        created_date=earliest_subtask_date,
+                        resolved_date=report_comment_date,
+                        days_elapsed=days_elapsed,
+                        target_days=target_days,
+                        status=status,
+                        lpm_category=lpm_key,
+                    )
+                    summary.add_result(result)
+
+                except Exception as e:
+                    self._log(f"  Error processing SR ticket {linked_key}: {e}", "red")
+                    continue
+
+        return summary
+
     def check_identification_resolution_config(self) -> SLASummary:
         """
         Check the "Identification of Resolution for Configuration Issues" SLA.
