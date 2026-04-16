@@ -42,7 +42,7 @@ class JiraClient:
         response.raise_for_status()  # raise after exhausting retries
 
     def search_issues(self, jql: str, fields: list[str] = None, max_results: int = 100) -> list[dict]:
-        """Search for issues using JQL."""
+        """Search for issues using JQL, paging through all results."""
         all_issues = []
         start_at = 0
 
@@ -55,15 +55,16 @@ class JiraClient:
             if fields:
                 params["fields"] = ",".join(fields)
 
-            data = self._make_request("/rest/api/3/search/jql", params)
+            data = self._make_request("/rest/api/3/search", params)
             issues = data.get("issues", [])
             all_issues.extend(issues)
 
-            # Check if we have more pages
-            total = data.get("total", 0)
-            start_at += len(issues)
+            if not issues:
+                break
 
-            if start_at >= total or len(issues) == 0:
+            start_at += len(issues)
+            total = data.get("total", 0)
+            if total and start_at >= total:
                 break
 
         return all_issues
