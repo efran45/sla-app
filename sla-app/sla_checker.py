@@ -252,7 +252,7 @@ class SLAChecker:
         """
         Check the "Identification of Resolution for Configuration Issues" SLA.
 
-        SLA: Time from ACS ticket creation (for BCBSLA health plan) to
+        SLA: Time from ACS ticket creation (for LA Blue health plan) to
              linked LPM ticket with category "break fix" must be <= 30 business days.
         """
         sla_config = SLA_DEFINITIONS["identification_resolution_config"]
@@ -314,7 +314,7 @@ class SLAChecker:
         """
         Check the "Resolution of Configuration Issues" SLA.
 
-        SLA: Time from ACS ticket creation (for BCBSLA health plan) to
+        SLA: Time from ACS ticket creation (for LA Blue health plan) to
              the "config done date" on linked LPM ticket must be <= 60 business days.
         """
         sla_config = SLA_DEFINITIONS["resolution_config"]
@@ -360,7 +360,7 @@ class SLAChecker:
         """
         Check the "Time to First Response" SLA.
 
-        SLA: Time from ACS ticket creation (for BCBSLA health plan) to the first
+        SLA: Time from ACS ticket creation (for LA Blue health plan) to the first
              public comment by an internal (Atlassian account type) user must be <= 2 business days.
         """
         sla_config = SLA_DEFINITIONS["first_response"]
@@ -466,7 +466,7 @@ class SLAChecker:
         """
         Check the "Impact Report Delivery" SLA.
 
-        Chain: LPM (BCBSLA) -> SR sub-task -> ACS ticket -> public comment with impact report attachment
+        Chain: LPM (LA Blue) -> SR sub-task -> ACS ticket -> public comment with impact report attachment
 
         SLA: Time from SR sub-task creation to a public comment on the linked ACS ticket
              that contains an attachment and mentions "impact report" must be <= 30 business days.
@@ -605,7 +605,7 @@ class SLAChecker:
         """
         Fallback for Impact Report SLA when no SR sub-tasks are found via direct links.
 
-        Queries LPM/BCBSLA tickets that have fixVersions set, collects all non-archived
+        Queries LPM/LA Blue tickets that have fixVersions set, collects all non-archived
         versions (past, present, and future), and returns each version with its tickets
         and all linked ticket keys for visibility.
         """

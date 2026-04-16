@@ -405,7 +405,7 @@ st.markdown("""
 <h1 style='font-size:2rem;font-weight:800;margin-bottom:2px'>
   🏥 Healthcare SLA Dashboard
 </h1>
-<p style='color:#64748b;margin-top:0'>BCBSLA &nbsp;·&nbsp; ACS → LPM → SR &nbsp;·&nbsp; Business-day tracking</p>
+<p style='color:#64748b;margin-top:0'>LA Blue &nbsp;·&nbsp; ACS → LPM → SR &nbsp;·&nbsp; Business-day tracking</p>
 """, unsafe_allow_html=True)
 
 if not run_btn:

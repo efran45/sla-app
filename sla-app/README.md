@@ -5,7 +5,7 @@ Command-line tool for monitoring healthcare SLA compliance from Jira.
 ## SLA Monitored
 
 ### Identification of Resolution for Configuration Issues
-- **Start**: Ticket created in ACS project with "Health plan (migrated)" = "BCBSLA"
+- **Start**: Ticket created in ACS project with "Health plan (migrated)" = "LA Blue"
 - **Stop**: Linked ticket created in LPM project with category = "break fix"
 - **Target**: 30 business days
 

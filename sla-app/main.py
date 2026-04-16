@@ -165,7 +165,7 @@ def main():
     console.print("[dim]2. Identification of Resolution for Configuration Issues | 30 Business Days[/]")
     console.print("[dim]3. Resolution of Configuration Issues | 60 Business Days[/]")
     console.print("[dim]4. Impact Report Delivery | 30 Business Days[/]")
-    console.print("[dim]ACS -> LPM -> SR | BCBSLA[/]")
+    console.print("[dim]ACS -> LPM -> SR | LA Blue[/]")
     console.print()
 
     if args.verbose:

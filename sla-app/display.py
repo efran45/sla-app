@@ -74,20 +74,20 @@ def display_sla_dashboard(summary: SLASummary):
 
     if "First Response" in summary.sla_name:
         desc_text = (
-            "Showing all BCBSLA ACS tickets measuring time from creation to the first "
+            "Showing all LA Blue ACS tickets measuring time from creation to the first "
             "public comment by an internal (Atlassian) user. "
             "Elapsed = calendar days/hours/minutes from ACS creation to first response (or to now if no response yet)."
         )
     elif "Identification" in summary.sla_name:
         desc_text = (
-            "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
+            "Showing all LA Blue ACS tickets that either have a linked LPM ticket "
             "with category \"break fix\", or are still open and awaiting an LPM link. "
             "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
             "Days = ACS creation to LPM creation (or to today if still awaiting a link)."
         )
     else:
         desc_text = (
-            "Showing all BCBSLA ACS tickets that either have a linked LPM ticket "
+            "Showing all LA Blue ACS tickets that either have a linked LPM ticket "
             "with a \"config done date\", or are still open and awaiting resolution. "
             "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
             "Days = ACS creation to the LPM ticket's config done date (or to today if not yet set)."
@@ -191,7 +191,7 @@ def display_fix_version_tickets(version_data: list[dict]):
     console.print(Panel(
         Text(
             "No SR sub-tasks found linked to any LPM tickets.\n"
-            "Showing all BCBSLA LPM tickets in recent fix versions with their linked ticket keys.",
+            "Showing all LA Blue LPM tickets in recent fix versions with their linked ticket keys.",
             justify="center",
             style="yellow",
         ),
@@ -224,7 +224,7 @@ def display_fix_version_tickets(version_data: list[dict]):
         console.print()
 
         if not tickets:
-            console.print("  [dim]No BCBSLA tickets in this version.[/]")
+            console.print("  [dim]No LA Blue tickets in this version.[/]")
             console.print()
             continue
 
