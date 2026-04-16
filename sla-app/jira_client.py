@@ -1,6 +1,7 @@
 """
 Jira API Client for Healthcare SLA CLI
 """
+import time
 import requests
 from base64 import b64encode
 from datetime import datetime
@@ -27,12 +28,18 @@ class JiraClient:
             "Content-Type": "application/json",
         }
 
-    def _make_request(self, endpoint: str, params: dict = None) -> dict:
-        """Make a GET request to Jira API."""
+    def _make_request(self, endpoint: str, params: dict = None, _retries: int = 5) -> dict:
+        """Make a GET request to Jira API with retry/backoff on rate limits."""
         url = f"{self.base_url}{endpoint}"
-        response = requests.get(url, headers=self.headers, params=params)
-        response.raise_for_status()
-        return response.json()
+        for attempt in range(_retries):
+            response = requests.get(url, headers=self.headers, params=params)
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", 2 ** attempt))
+                time.sleep(retry_after)
+                continue
+            response.raise_for_status()
+            return response.json()
+        response.raise_for_status()  # raise after exhausting retries
 
     def search_issues(self, jql: str, fields: list[str] = None, max_results: int = 100) -> list[dict]:
         """Search for issues using JQL."""
@@ -75,10 +82,18 @@ class JiraClient:
         return issue.get("fields", {}).get("issuelinks", [])
 
     def get_issue_changelog(self, issue_key: str) -> list[dict]:
-        """Get the changelog for an issue to find status transitions."""
+        """Get all changelog entries for an issue, paging through all results."""
         endpoint = f"/rest/api/3/issue/{issue_key}/changelog"
-        data = self._make_request(endpoint)
-        return data.get("values", [])
+        all_values = []
+        start_at = 0
+        while True:
+            data = self._make_request(endpoint, params={"startAt": start_at, "maxResults": 100})
+            values = data.get("values", [])
+            all_values.extend(values)
+            start_at += len(values)
+            if start_at >= data.get("total", 0) or not values:
+                break
+        return all_values
 
     def get_status_transition_date(self, issue_key: str, target_status: str) -> Optional[str]:
         """Find the date when an issue first transitioned to a given status."""
@@ -90,10 +105,18 @@ class JiraClient:
         return None
 
     def get_issue_comments(self, issue_key: str) -> list[dict]:
-        """Get all comments for an issue."""
+        """Get all comments for an issue, paging through all results."""
         endpoint = f"/rest/api/3/issue/{issue_key}/comment"
-        data = self._make_request(endpoint)
-        return data.get("comments", [])
+        all_comments = []
+        start_at = 0
+        while True:
+            data = self._make_request(endpoint, params={"startAt": start_at, "maxResults": 100})
+            comments = data.get("comments", [])
+            all_comments.extend(comments)
+            start_at += len(comments)
+            if start_at >= data.get("total", 0) or not comments:
+                break
+        return all_comments
 
     def test_connection(self) -> dict:
         """Test the Jira connection."""
