@@ -55,25 +55,23 @@ class JiraClient:
         response.raise_for_status()  # raise after exhausting retries
 
     def search_issues(self, jql: str, fields: list[str] = None, max_results: int = 100) -> list[dict]:
-        """Search for issues using JQL, paging through all results."""
+        """Search for issues using JQL, paging through all results via nextPageToken."""
         all_issues = []
-        start_at = 0
+        next_page_token = None
 
         while True:
-            body = {"jql": jql, "startAt": start_at, "maxResults": max_results}
+            body = {"jql": jql, "maxResults": max_results}
             if fields:
-                body["fields"] = fields
+                body["fields"] = [f for f in fields if f]  # strip empty field IDs
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
 
-            data = self._post_request("/rest/api/3/search", body)
+            data = self._post_request("/rest/api/3/search/jql", body)
             issues = data.get("issues", [])
             all_issues.extend(issues)
 
-            if not issues:
-                break
-
-            start_at += len(issues)
-            total = data.get("total", 0)
-            if total and start_at >= total:
+            next_page_token = data.get("nextPageToken")
+            if not issues or not next_page_token:
                 break
 
         return all_issues
