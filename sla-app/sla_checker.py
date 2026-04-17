@@ -82,8 +82,9 @@ class SLAChecker:
     def _comment_is_impact_report(self, comment: dict) -> bool:
         """
         Check if a comment looks like an impact report delivery.
-        Matches public comments that have an attachment and mention
-        'impact report' (case-insensitive) in the body text.
+        Matches public comments that mention 'impact report' (case-insensitive)
+        in the body text. Attachments may be added separately to the ticket
+        rather than embedded in the comment ADF, so we do not require a media node.
         """
         if not self._is_public_comment(comment):
             return False
@@ -91,9 +92,7 @@ class SLAChecker:
         if not body:
             return False
         text = self._extract_adf_text(body).lower()
-        has_keywords = "impact report" in text
-        has_attachment = self._adf_has_media(body)
-        return has_keywords and has_attachment
+        return "impact report" in text
 
     def check_impact_report_delivery(self) -> SLASummary:
         """
