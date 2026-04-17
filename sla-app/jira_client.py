@@ -41,30 +41,37 @@ class JiraClient:
             return response.json()
         response.raise_for_status()  # raise after exhausting retries
 
+    def _post_request(self, endpoint: str, body: dict, _retries: int = 5) -> dict:
+        """Make a POST request to Jira API with retry/backoff on rate limits."""
+        url = f"{self.base_url}{endpoint}"
+        for attempt in range(_retries):
+            response = requests.post(url, headers=self.headers, json=body)
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", 2 ** attempt))
+                time.sleep(retry_after)
+                continue
+            response.raise_for_status()
+            return response.json()
+        response.raise_for_status()  # raise after exhausting retries
+
     def search_issues(self, jql: str, fields: list[str] = None, max_results: int = 100) -> list[dict]:
-        """Search for issues using JQL, paging through all results."""
+        """Search for issues using JQL, paging through all results via nextPageToken."""
         all_issues = []
-        start_at = 0
+        next_page_token = None
 
         while True:
-            params = {
-                "jql": jql,
-                "startAt": start_at,
-                "maxResults": max_results,
-            }
+            body = {"jql": jql, "maxResults": max_results}
             if fields:
-                params["fields"] = ",".join(fields)
+                body["fields"] = fields
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
 
-            data = self._make_request("/rest/api/3/search", params)
+            data = self._post_request("/rest/api/3/search/jql", body)
             issues = data.get("issues", [])
             all_issues.extend(issues)
 
-            if not issues:
-                break
-
-            start_at += len(issues)
-            total = data.get("total", 0)
-            if total and start_at >= total:
+            next_page_token = data.get("nextPageToken")
+            if not issues or not next_page_token:
                 break
 
         return all_issues
