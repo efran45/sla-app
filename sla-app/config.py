@@ -30,23 +30,23 @@ PROJECT_C = "SR"   # Third project (sub-tasks linked to LPM tickets)
 SLA_DEFINITIONS = {
     "identification_resolution_config": {
         "name": "Identification of Resolution for Configuration Issues",
-        "description": "Time from ACS ticket creation to linked LPM ticket with category 'break fix'",
+        "description": "Time from ACS ticket creation to linked LPM ticket reaching 'ready for config' status",
         "source_project": PROJECT_A,
         "target_project": PROJECT_B,
         "health_plan_field": "Health plan",
         "health_plan_value": "LA Blue",
-        "target_category": "break fix",
+        "target_status": "ready for config",
         "target_days": 30,  # Business days
         "use_business_days": True,
     },
     "resolution_config": {
         "name": "Resolution of Configuration Issues",
-        "description": "Time from ACS ticket creation to 'config done date' on linked LPM ticket",
+        "description": "Time from ACS ticket creation to linked LPM ticket reaching 'deployed to UAT', 'waiting for UAT signoff', or 'done'",
         "source_project": PROJECT_A,
         "target_project": PROJECT_B,
         "health_plan_field": "Health plan",
         "health_plan_value": "LA Blue",
-        "config_done_date_field": CONFIG_DONE_DATE_FIELD_ID,
+        "target_statuses": ["deployed to UAT", "waiting for UAT signoff", "done"],
         "target_days": 60,  # Business days
         "use_business_days": True,
     },

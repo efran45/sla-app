@@ -303,7 +303,7 @@ class SLAChecker:
                 if ticket_status in excluded_statuses:
                     self._log(f"  Excluding {result.source_ticket}: no LPM ticket and status is '{ticket_status}'", "dim")
                     continue
-                self._log(f"  {result.source_ticket}: no matching LPM ticket with 'break fix' category (tracking as in progress)", "dim")
+                self._log(f"  {result.source_ticket}: no LPM ticket reached 'ready for config' yet (tracking as in progress)", "dim")
 
             summary.add_result(result)
 
@@ -349,7 +349,7 @@ class SLAChecker:
                 if ticket_status in excluded_statuses:
                     self._log(f"  Excluding {result.source_ticket}: no LPM ticket and status is '{ticket_status}'", "dim")
                     continue
-                self._log(f"  {result.source_ticket}: no LPM ticket with config done date yet (tracking as in progress)", "dim")
+                self._log(f"  {result.source_ticket}: no LPM ticket reached a target status yet (tracking as in progress)", "dim")
 
             summary.add_result(result)
 
@@ -406,12 +406,6 @@ class SLAChecker:
 
             first_response_date = None
             for comment in comments:
-                author = comment.get("author", {})
-                account_type = author.get("accountType", "")
-
-                if account_type != "atlassian":
-                    continue
-
                 jsd_public = comment.get("jsdPublic")
                 visibility = comment.get("visibility")
 
@@ -424,7 +418,8 @@ class SLAChecker:
                 comment_date = parse_jira_date(comment.get("created"))
                 if comment_date and (first_response_date is None or comment_date < first_response_date):
                     first_response_date = comment_date
-                    self._log(f"  Public internal comment found: {author.get('displayName', 'Unknown')} on {comment_date}", "green")
+                    author = comment.get("author", {})
+                    self._log(f"  Public comment found: {author.get('displayName', 'Unknown')} on {comment_date}", "green")
 
             source_of_id = extract_field_value(ticket_fields.get(SOURCE_OF_ID_FIELD_ID), default="")
             category_migrated = extract_field_value(ticket_fields.get(CATEGORY_FIELD_ID), default="")
@@ -705,23 +700,24 @@ class SLAChecker:
         ]
 
     def _evaluate_ticket_resolution(self, ticket: dict, sla_config: dict) -> SLAResult:
-        """Evaluate a single ticket against the Resolution SLA (config done date on LPM)."""
+        """Evaluate a single ACS ticket against the Resolution SLA.
+
+        Stops when a linked LPM ticket first transitions to any of target_statuses.
+        """
         ticket_key = ticket.get("key")
         fields = ticket.get("fields", {})
 
         self._log(f"\n--- [Resolution] Evaluating {ticket_key} ---", "bold cyan")
 
         created_str = fields.get("created")
-        created_date = parse_jira_date(created_str)
-        if not created_date:
-            created_date = datetime.now()
+        created_date = parse_jira_date(created_str) or datetime.now()
 
         issue_links = fields.get("issuelinks", [])
         target_ticket = None
         resolved_date = None
         candidates = []
 
-        config_done_field = sla_config.get("config_done_date_field", "")
+        target_statuses = sla_config.get("target_statuses", [])
 
         for link in issue_links:
             linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
@@ -732,40 +728,24 @@ class SLAChecker:
             if not linked_key.startswith(sla_config["target_project"]):
                 continue
 
-            self._log(f"    Checking LPM ticket {linked_key} for config done date...", "dim")
+            self._log(f"    Checking LPM {linked_key} for target statuses...", "dim")
 
             try:
-                category_field = self.field_ids.get("category", "")
-                linked_fields = ["key", "created"]
-                if config_done_field:
-                    linked_fields.append(config_done_field)
-                if category_field:
-                    linked_fields.append(category_field)
-                linked_ticket_data = self.jira.get_issue(linked_key, fields=linked_fields)
-                linked_ticket_fields = linked_ticket_data.get("fields", {})
-
-                config_done_value = linked_ticket_fields.get(config_done_field)
-                config_done_date = parse_jira_date(config_done_value)
-
-                lpm_cat = ""
-                if category_field and category_field in linked_ticket_fields:
-                    lpm_cat = extract_field_value(linked_ticket_fields.get(category_field), default="")
-
-                if config_done_date:
-                    candidates.append((linked_key, config_done_date, lpm_cat))
-                    self._log(f"      MATCH! Candidate: {linked_key} config done date: {config_done_date}", "green")
+                transition_date_str = self.jira.get_status_transition_date(linked_key, target_statuses)
+                if transition_date_str:
+                    transition_date = parse_jira_date(transition_date_str)
+                    candidates.append((linked_key, transition_date))
+                    self._log(f"      MATCH! {linked_key} reached a target status on {transition_date}", "green")
                 else:
-                    self._log(f"      No config done date set", "dim")
-
+                    self._log(f"      No target status transition found", "dim")
             except Exception as e:
-                self._log(f"      Error fetching linked ticket: {e}", "red")
+                self._log(f"      Error fetching changelog for {linked_key}: {e}", "red")
                 continue
 
-        lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
-            target_ticket, resolved_date, lpm_category = candidates[0]
-            self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
+            target_ticket, resolved_date = candidates[0]
+            self._log(f"  Selected LPM ticket: {target_ticket}", "green")
 
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
@@ -794,21 +774,20 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
-            lpm_category=lpm_category,
         )
 
     def _evaluate_ticket(self, ticket: dict, sla_config: dict) -> SLAResult:
-        """Evaluate a single ticket against the SLA."""
+        """Evaluate a single ACS ticket against the Identification SLA.
+
+        Stops when a linked LPM ticket first transitions to target_status.
+        """
         ticket_key = ticket.get("key")
         fields = ticket.get("fields", {})
 
         self._log(f"\n--- Evaluating {ticket_key} ---", "bold cyan")
 
         created_str = fields.get("created")
-        created_date = parse_jira_date(created_str)
-
-        if not created_date:
-            created_date = datetime.now()
+        created_date = parse_jira_date(created_str) or datetime.now()
 
         self._log(f"  Created: {created_date}", "dim")
 
@@ -822,58 +801,30 @@ class SLAChecker:
         for link in issue_links:
             linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
             if not linked_issue:
-                self._log(f"    Link has no outward/inward issue: {link.get('type', {}).get('name', 'unknown')}", "dim")
                 continue
 
             linked_key = linked_issue.get("key", "")
-            self._log(f"    Found link: {linked_key}", "dim")
-
             if not linked_key.startswith(sla_config["target_project"]):
-                self._log(f"      Skipped: not an {sla_config['target_project']} ticket", "dim")
                 continue
 
-            self._log(f"      Is {sla_config['target_project']} ticket, checking category...", "dim")
+            self._log(f"    Checking LPM {linked_key} for '{sla_config['target_status']}' status...", "dim")
 
             try:
-                category_field = self.field_ids.get("category", "")
-                linked_fields = ["key", "created", category_field] if category_field else ["key", "created"]
-                linked_ticket_data = self.jira.get_issue(linked_key, fields=linked_fields)
-
-                linked_ticket_fields = linked_ticket_data.get("fields", {})
-
-                self._log(f"      LPM ticket fields: {list(linked_ticket_fields.keys())}", "dim")
-
-                category_value = ""
-                if category_field and category_field in linked_ticket_fields:
-                    category_value = extract_field_value(linked_ticket_fields.get(category_field))
-                    self._log(f"      Category field ({category_field}): {category_value}", "dim")
-
-                for field_key, field_val in linked_ticket_fields.items():
-                    if "category" in field_key.lower():
-                        found_value = extract_field_value(field_val)
-                        self._log(f"      Found category-like field ({field_key}): {found_value}", "dim")
-                        if not category_value:
-                            category_value = found_value
-
-                self._log(f"      Final category value: '{category_value}'", "yellow")
-                self._log(f"      Looking for: '{sla_config['target_category']}'", "yellow")
-
-                if category_value.lower() == sla_config["target_category"].lower():
-                    lpm_created = parse_jira_date(linked_ticket_fields.get("created"))
-                    candidates.append((linked_key, lpm_created, category_value))
-                    self._log(f"      MATCH! Candidate: {linked_key} (created {lpm_created})", "green")
+                transition_date_str = self.jira.get_status_transition_date(linked_key, sla_config["target_status"])
+                if transition_date_str:
+                    transition_date = parse_jira_date(transition_date_str)
+                    candidates.append((linked_key, transition_date))
+                    self._log(f"      MATCH! {linked_key} reached '{sla_config['target_status']}' on {transition_date}", "green")
                 else:
-                    self._log(f"      No match", "red")
-
+                    self._log(f"      No '{sla_config['target_status']}' transition found", "dim")
             except Exception as e:
-                self._log(f"      Error fetching linked ticket: {e}", "red")
+                self._log(f"      Error fetching changelog for {linked_key}: {e}", "red")
                 continue
 
-        lpm_category = ""
         if candidates:
             candidates.sort(key=lambda c: c[1] or datetime.min, reverse=True)
-            target_ticket, resolved_date, lpm_category = candidates[0]
-            self._log(f"  Selected most recent LPM ticket: {target_ticket}", "green")
+            target_ticket, resolved_date = candidates[0]
+            self._log(f"  Selected LPM ticket: {target_ticket}", "green")
 
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
@@ -908,5 +859,4 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
-            lpm_category=lpm_category,
         )

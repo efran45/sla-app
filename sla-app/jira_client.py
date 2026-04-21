@@ -103,12 +103,17 @@ class JiraClient:
                 break
         return all_values
 
-    def get_status_transition_date(self, issue_key: str, target_status: str) -> Optional[str]:
-        """Find the date when an issue first transitioned to a given status."""
+    def get_status_transition_date(self, issue_key: str, target_status) -> Optional[str]:
+        """Find the date when an issue first transitioned to a given status (or any status in a list)."""
+        if isinstance(target_status, str):
+            target_statuses = {target_status.lower()}
+        else:
+            target_statuses = {s.lower() for s in target_status}
+
         changelog = self.get_issue_changelog(issue_key)
         for entry in changelog:
             for item in entry.get("items", []):
-                if item.get("field") == "status" and (item.get("toString") or "").lower() == target_status.lower():
+                if item.get("field") == "status" and (item.get("toString") or "").lower() in target_statuses:
                     return entry.get("created")
         return None
 

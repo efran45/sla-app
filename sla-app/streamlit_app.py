@@ -194,9 +194,14 @@ def days_bar_chart(results: list[SLAResult], target_days: int) -> go.Figure:
         return None
 
     df = pd.DataFrame([{
-        "ticket": r.source_ticket,
+        "label": (
+            f"{r.source_ticket}<br>"
+            f"<span style='font-size:9px'>{r.created_date.strftime('%b %d, %Y') if r.created_date else ''}</span>"
+        ),
         "days": r.days_elapsed,
         "status": r.status,
+        "ticket": r.source_ticket,
+        "created": r.created_date.strftime("%b %d, %Y") if r.created_date else "",
     } for r in results]).sort_values("days", ascending=False).head(20)
 
     color_map = {"met": C_MET, "breached": C_BREACHED, "in_progress": C_PROGRESS}
@@ -204,10 +209,11 @@ def days_bar_chart(results: list[SLAResult], target_days: int) -> go.Figure:
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=df["ticket"],
+        x=df["label"],
         y=df["days"],
         marker_color=colors,
-        hovertemplate="<b>%{x}</b><br>Days elapsed: %{y}<extra></extra>",
+        hovertemplate="<b>%{customdata[0]}</b><br>Created: %{customdata[1]}<br>Days elapsed: %{y}<extra></extra>",
+        customdata=df[["ticket", "created"]].values,
         name="Days Elapsed",
     ))
     fig.add_hline(
@@ -293,14 +299,13 @@ def styled_df(results: list[SLAResult]) -> pd.DataFrame:
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
         rows.append({
-            "Ticket": r.source_ticket,
-            "Linked": r.target_ticket or "—",
-            "Created": r.created_date.strftime("%b %d, %Y") if r.created_date else "—",
-            "Resolved": r.resolved_date.strftime("%b %d, %Y") if r.resolved_date else "—",
-            "Days": r.days_elapsed,
+            "ACS Ticket": r.source_ticket,
+            "ACS Created": r.created_date.strftime("%b %d, %Y") if r.created_date else "—",
+            "LPM Ticket": r.target_ticket or "—",
+            "Resolution Date": r.resolved_date.strftime("%b %d, %Y") if r.resolved_date else "—",
+            "Business Days": r.days_elapsed,
             "Target": r.target_days,
             "Status": status_icon,
-            "Category": r.lpm_category or "—",
         })
     return pd.DataFrame(rows)
 
@@ -529,10 +534,10 @@ st.markdown("---")
 
 # ── Individual SLA sections ───────────────────────────────────────────────────
 SLA_DEFS = [
-    (1, "Time to First Response",                      "ACS ticket creation → first internal comment",            2,  summaries[0], errors[0], checker.check_first_response),
-    (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM 'break fix' ticket",        30, summaries[1], errors[1], None),
-    (3, "Resolution of Configuration Issues",          "ACS creation → LPM 'config done date'",                 60, summaries[2], errors[2], None),
-    (4, "Impact Report Delivery",                      "SR sub-task creation → impact report attachment on ACS", 30, summaries[3], errors[3], None),
+    (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                          2,  summaries[0], errors[0], checker.check_first_response),
+    (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",              30, summaries[1], errors[1], None),
+    (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'",     60, summaries[2], errors[2], None),
+    (4, "Impact Report Delivery",                         "SR sub-task creation → 'impact report' comment on linked ACS ticket",      30, summaries[3], errors[3], None),
 ]
 
 for sla_num, title, caption, target, summary, error, _ in SLA_DEFS:

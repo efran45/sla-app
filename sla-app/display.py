@@ -75,23 +75,25 @@ def display_sla_dashboard(summary: SLASummary):
     if "First Response" in summary.sla_name:
         desc_text = (
             "Showing all LA Blue ACS tickets measuring time from creation to the first "
-            "public comment by an internal (Atlassian) user. "
-            "Elapsed = calendar days/hours/minutes from ACS creation to first response (or to now if no response yet)."
+            "public comment (any author, including automations). "
+            "Elapsed = business days from ACS creation to first public comment (or to now if none yet)."
         )
     elif "Identification" in summary.sla_name:
         desc_text = (
-            "Showing all LA Blue ACS tickets that either have a linked LPM ticket "
-            "with category \"break fix\", or are still open and awaiting an LPM link. "
+            "Showing all LA Blue ACS tickets and their linked LPM tickets. "
             "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
-            "Days = ACS creation to LPM creation (or to today if still awaiting a link)."
+            "Days = ACS creation → first time the linked LPM ticket reached 'Ready for Config' status "
+            "(or to today if not yet reached)."
+        )
+    elif "Resolution" in summary.sla_name:
+        desc_text = (
+            "Showing all LA Blue ACS tickets and their linked LPM tickets. "
+            "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
+            "Days = ACS creation → first time the linked LPM ticket reached 'Deployed to UAT', "
+            "'Waiting for UAT Signoff', or 'Done' status (or to today if not yet reached)."
         )
     else:
-        desc_text = (
-            "Showing all LA Blue ACS tickets that either have a linked LPM ticket "
-            "with a \"config done date\", or are still open and awaiting resolution. "
-            "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
-            "Days = ACS creation to the LPM ticket's config done date (or to today if not yet set)."
-        )
+        desc_text = ""
 
     console.print(Align.center(Text(desc_text, style="dim", justify="center"), width=min(term_width, 100)))
     console.print()
@@ -115,7 +117,12 @@ def display_sla_dashboard(summary: SLASummary):
     if not is_first_response:
         ticket_table.add_column("LPM Ticket", no_wrap=True, min_width=10)
         ticket_table.add_column("LPM Category", style="dim", no_wrap=True)
-    date_col_name = "Comment Date" if is_first_response else "Config Done Date" if is_resolution else "LPM Date"
+    if is_first_response:
+        date_col_name = "First Comment Date"
+    elif is_resolution:
+        date_col_name = "LPM Status Date"
+    else:
+        date_col_name = "LPM Status Date"
     ticket_table.add_column(date_col_name, no_wrap=True, min_width=18)
     ticket_table.add_column("Elapsed" if is_first_response else "Days", justify="right", no_wrap=True, min_width=8)
     ticket_table.add_column("Status", justify="center", no_wrap=True, min_width=11)
