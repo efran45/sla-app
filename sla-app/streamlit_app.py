@@ -511,9 +511,9 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     with chart_col:
         bar = days_bar_chart(sorted_all, target_days)
         if bar:
-            st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False}, key=f"bar_{sla_num}")
+            st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "staticPlot": True}, key=f"bar_{sla_num}")
     with gauge_col:
-        st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False}, key=f"gauge_{sla_num}")
+        st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "staticPlot": True}, key=f"gauge_{sla_num}")
 
     link_cfg = _sla_column_config(sla_num, jira_url)
 
@@ -782,7 +782,7 @@ for i, (s, label, target) in enumerate(zip(summaries, SLA_LABELS, SLA_TARGETS)):
 # Overview stacked bar
 if any(s and s.total_count > 0 for s in summaries):
     st.markdown("#### Ticket Volume by SLA")
-    st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False}, key="overview_bar")
+    st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "staticPlot": True}, key="overview_bar")
 
 st.markdown("---")
 
