@@ -656,6 +656,7 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
+            lpm_candidates=candidates,
         )
 
     def _evaluate_ticket(self, ticket: dict, sla_config: dict) -> SLAResult:
@@ -746,4 +747,5 @@ class SLAChecker:
             status=status,
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
+            lpm_candidates=candidates,
         )

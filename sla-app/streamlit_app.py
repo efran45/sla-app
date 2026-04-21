@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import JIRA_FIELDS
 from jira_client import JiraClient
 from sla_checker import SLAChecker
-from sla_calculator import SLASummary, SLAResult
+from sla_calculator import SLASummary, SLAResult, get_business_days, get_business_days_elapsed
 
 CONFIG_FILE = Path(__file__).parent / ".config.json"
 
@@ -132,6 +132,68 @@ def save_config(cfg: dict):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
 
 
+SORT_OPTIONS = [
+    "Days (high → low)",
+    "Days (low → high)",
+    "Created (newest first)",
+    "Created (oldest first)",
+    "Ticket # (high → low)",
+    "Ticket # (low → high)",
+    "Status (breached first)",
+]
+
+def _ticket_num(r: SLAResult) -> int:
+    parts = (r.source_ticket or "").rsplit("-", 1)
+    return int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+
+def sort_results(results: list[SLAResult], sort_by: str) -> list[SLAResult]:
+    STATUS_ORDER = {"breached": 0, "in_progress": 1, "met": 2}
+    if sort_by == "Days (high → low)":
+        return sorted(results, key=lambda r: r.days_elapsed, reverse=True)
+    if sort_by == "Days (low → high)":
+        return sorted(results, key=lambda r: r.days_elapsed)
+    if sort_by == "Created (newest first)":
+        return sorted(results, key=lambda r: r.created_date or datetime.min, reverse=True)
+    if sort_by == "Created (oldest first)":
+        return sorted(results, key=lambda r: r.created_date or datetime.min)
+    if sort_by == "Ticket # (high → low)":
+        return sorted(results, key=_ticket_num, reverse=True)
+    if sort_by == "Ticket # (low → high)":
+        return sorted(results, key=_ticket_num)
+    if sort_by == "Status (breached first)":
+        return sorted(results, key=lambda r: STATUS_ORDER.get(r.status, 3))
+    return results
+
+
+def apply_lpm_overrides(results: list[SLAResult], overrides: dict) -> list[SLAResult]:
+    """Return results with any user-selected LPM ticket substituted in."""
+    if not overrides:
+        return results
+    from copy import copy
+    out = []
+    for r in results:
+        chosen = overrides.get(r.source_ticket)
+        if chosen and r.lpm_candidates:
+            for lpm_key, transition_date in r.lpm_candidates:
+                if lpm_key == chosen:
+                    rc = copy(r)
+                    rc.target_ticket = lpm_key
+                    rc.resolved_date = transition_date
+                    if transition_date:
+                        rc.days_elapsed = get_business_days(r.created_date, transition_date)
+                        rc.status = "met" if rc.days_elapsed <= r.target_days else "breached"
+                    else:
+                        rc.days_elapsed = get_business_days_elapsed(r.created_date)
+                        rc.status = "breached" if rc.days_elapsed > r.target_days else "in_progress"
+                    out.append(rc)
+                    break
+            else:
+                out.append(r)
+        else:
+            out.append(r)
+    return out
+
+
 def compliance_color(pct: float) -> str:
     if pct >= 90:
         return C_MET
@@ -202,7 +264,7 @@ def days_bar_chart(results: list[SLAResult], target_days: int) -> go.Figure:
         "status": r.status,
         "ticket": r.source_ticket,
         "created": r.created_date.strftime("%b %d, %Y") if r.created_date else "",
-    } for r in results]).sort_values("days", ascending=False).head(20)
+    } for r in results]).head(20)
 
     color_map = {"met": C_MET, "breached": C_BREACHED, "in_progress": C_PROGRESS}
     colors = [color_map.get(s, C_NEUTRAL) for s in df["status"]]
@@ -375,9 +437,6 @@ def _sla_column_config(sla_num: int, jira_url: str) -> dict:
 
 
 def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):
-    compliance = summary.compliance_rate
-    cc = compliance_color(compliance)
-
     st.markdown(f"""
     <div class="sla-section-header">
         <p class="sla-section-title">SLA {sla_num} &nbsp;·&nbsp; {title}</p>
@@ -389,18 +448,71 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
         st.warning("No tickets found matching this SLA criteria.")
         return
 
-    # KPI row
+    # ── LPM override expander (SLAs 2 & 3 only) ──────────────────────────────
+    if sla_num in (2, 3):
+        multi = [r for r in summary.results if len(r.lpm_candidates) > 1]
+        if multi:
+            with st.expander(f"🔗 Override linked LPM ticket ({len(multi)} ticket{'s' if len(multi) != 1 else ''} with multiple candidates)"):
+                st.caption("The calculator auto-selects the most recent LPM transition. Pick a different one here — takes effect immediately.")
+                for r in multi:
+                    cand_keys = [k for k, _ in r.lpm_candidates]
+                    current = st.session_state.lpm_overrides.get(r.source_ticket, cand_keys[0])
+                    if current not in cand_keys:
+                        current = cand_keys[0]
+                    label_col, sel_col = st.columns([1, 3])
+                    with label_col:
+                        st.markdown(f"**{r.source_ticket}**")
+                    with sel_col:
+                        chosen = st.selectbox(
+                            f"lpm_for_{r.source_ticket}",
+                            options=cand_keys,
+                            index=cand_keys.index(current),
+                            format_func=lambda k, r=r: (
+                                f"{k}  —  "
+                                + next((d.strftime('%b %d %Y') for lk, d in r.lpm_candidates if lk == k and d), "no date")
+                            ),
+                            key=f"lpm_override_{sla_num}_{r.source_ticket}",
+                            label_visibility="collapsed",
+                        )
+                    st.session_state.lpm_overrides[r.source_ticket] = chosen
+
+    # Apply overrides and compute effective results
+    effective = apply_lpm_overrides(summary.results, st.session_state.lpm_overrides)
+    disp = SLASummary(summary.sla_name, summary.target_days)
+    for r in effective:
+        disp.add_result(r)
+
+    compliance = disp.compliance_rate
+    cc = compliance_color(compliance)
+
+    # ── Sort control ──────────────────────────────────────────────────────────
+    sort_col, _ = st.columns([2, 5])
+    with sort_col:
+        current_sort = st.session_state.sla_sort.get(sla_num, SORT_OPTIONS[0])
+        if current_sort not in SORT_OPTIONS:
+            current_sort = SORT_OPTIONS[0]
+        sort_by = st.selectbox(
+            "Sort by",
+            options=SORT_OPTIONS,
+            index=SORT_OPTIONS.index(current_sort),
+            key=f"sort_{sla_num}",
+        )
+    st.session_state.sla_sort[sla_num] = sort_by
+
+    sorted_all = sort_results(disp.results, sort_by)
+
+    # ── KPI row ───────────────────────────────────────────────────────────────
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: kpi_card("Total Tickets", str(summary.total_count), color=C_NEUTRAL)
-    with c2: kpi_card("Met SLA", str(summary.met_count), color=C_MET)
-    with c3: kpi_card("Breached", str(summary.breached_count), color=C_BREACHED if summary.breached_count else "#e2e8f0")
-    with c4: kpi_card("In Progress", str(summary.in_progress_count), color=C_PROGRESS if summary.in_progress_count else "#e2e8f0")
+    with c1: kpi_card("Total Tickets", str(disp.total_count), color=C_NEUTRAL)
+    with c2: kpi_card("Met SLA", str(disp.met_count), color=C_MET)
+    with c3: kpi_card("Breached", str(disp.breached_count), color=C_BREACHED if disp.breached_count else "#e2e8f0")
+    with c4: kpi_card("In Progress", str(disp.in_progress_count), color=C_PROGRESS if disp.in_progress_count else "#e2e8f0")
     with c5: kpi_card("Compliance Rate", f"{compliance:.0f}%", sub=f"Target: {target_days}d", color=cc)
 
-    # Charts row
+    # ── Charts row ────────────────────────────────────────────────────────────
     chart_col, gauge_col = st.columns([3, 1])
     with chart_col:
-        bar = days_bar_chart(summary.results, target_days)
+        bar = days_bar_chart(sorted_all, target_days)
         if bar:
             st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False}, key=f"bar_{sla_num}")
     with gauge_col:
@@ -411,7 +523,8 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     def _show_table(results: list[SLAResult], tab_key: str) -> bool:
         if not results:
             return False
-        df = styled_df(results, sla_num, jira_url)
+        sorted_tab = sort_results(results, sort_by)
+        df = styled_df(sorted_tab, sla_num, jira_url)
         visible = ["Exclude"] + [c for c in df.columns if c not in ("Exclude", "_key")]
         col_cfg = {
             "_key": None,
@@ -442,25 +555,30 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
                 st.session_state.excluded_keys.discard(k)
         return True
 
+    # ── Tabs ──────────────────────────────────────────────────────────────────
     tab_b, tab_p, tab_m = st.tabs([
-        f"🔴 Breached ({summary.breached_count})",
-        f"🟡 In Progress ({summary.in_progress_count})",
-        f"✅ Met ({summary.met_count})",
+        f"🔴 Breached ({disp.breached_count})",
+        f"🟡 In Progress ({disp.in_progress_count})",
+        f"✅ Met ({disp.met_count})",
     ])
     with tab_b:
-        if not _show_table(summary.breached_results, "b"):
+        if not _show_table(disp.breached_results, "b"):
             st.success("No breached tickets!")
     with tab_p:
-        if not _show_table(summary.in_progress_results, "p"):
+        if not _show_table(disp.in_progress_results, "p"):
             st.info("No in-progress tickets.")
     with tab_m:
-        if not _show_table(summary.met_results, "m"):
+        if not _show_table(disp.met_results, "m"):
             st.info("No resolved tickets in this range.")
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "excluded_keys" not in st.session_state:
     st.session_state.excluded_keys = set()
+if "lpm_overrides" not in st.session_state:
+    st.session_state.lpm_overrides = {}
+if "sla_sort" not in st.session_state:
+    st.session_state.sla_sort = {}
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 saved = load_config()
