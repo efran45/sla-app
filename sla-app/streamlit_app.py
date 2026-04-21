@@ -294,19 +294,45 @@ def compliance_gauge(pct: float) -> go.Figure:
     return fig
 
 
-def styled_df(results: list[SLAResult]) -> pd.DataFrame:
+def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
     rows = []
+    fmt = "%b %d, %Y"
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
-        rows.append({
-            "ACS Ticket": r.source_ticket,
-            "ACS Created": r.created_date.strftime("%b %d, %Y") if r.created_date else "—",
-            "LPM Ticket": r.target_ticket or "—",
-            "Resolution Date": r.resolved_date.strftime("%b %d, %Y") if r.resolved_date else "—",
-            "Business Days": r.days_elapsed,
-            "Target": r.target_days,
-            "Status": status_icon,
-        })
+        created  = r.created_date.strftime(fmt)  if r.created_date  else "—"
+        resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
+
+        if sla_num == 1:
+            rows.append({
+                "ACS Ticket":         r.source_ticket,
+                "ACS Created":        created,
+                "First Comment Date": resolved,
+                "Business Days":      r.days_elapsed,
+                "Target":             r.target_days,
+                "Status":             status_icon,
+            })
+        elif sla_num in (2, 3):
+            resolution_label = "Ready for Config Date" if sla_num == 2 else "LPM Status Date"
+            rows.append({
+                "ACS Ticket":      r.source_ticket,
+                "ACS Created":     created,
+                "LPM Ticket":      r.target_ticket or "—",
+                resolution_label:  resolved,
+                "Business Days":   r.days_elapsed,
+                "Target":          r.target_days,
+                "Status":          status_icon,
+            })
+        else:  # SLA 4 — Impact Report
+            rows.append({
+                "SR Sub-task":          r.source_ticket,
+                "Sub-task Created":     created,
+                "LPM Ticket":           r.lpm_category or "—",
+                "ACS Ticket":           r.target_ticket or "—",
+                "Impact Report Date":   resolved,
+                "Business Days":        r.days_elapsed,
+                "Target":               r.target_days,
+                "Status":               status_icon,
+            })
     return pd.DataFrame(rows)
 
 
@@ -350,17 +376,17 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     ])
     with tab_b:
         if summary.breached_results:
-            st.dataframe(styled_df(summary.breached_results), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.breached_results, sla_num), use_container_width=True, hide_index=True)
         else:
             st.success("No breached tickets!")
     with tab_p:
         if summary.in_progress_results:
-            st.dataframe(styled_df(summary.in_progress_results), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.in_progress_results, sla_num), use_container_width=True, hide_index=True)
         else:
             st.info("No in-progress tickets.")
     with tab_m:
         if summary.met_results:
-            st.dataframe(styled_df(summary.met_results), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.met_results, sla_num), use_container_width=True, hide_index=True)
         else:
             st.info("No resolved tickets in this range.")
 
