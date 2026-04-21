@@ -356,11 +356,11 @@ def compliance_gauge(pct: float) -> go.Figure:
     return fig
 
 
-def _ticket_url(base_url: str, key) -> str:
-    """Return a Jira browse URL if key is valid, else the raw value."""
-    if not key or key == "—" or not base_url:
-        return key or "—"
-    return f"{base_url.rstrip('/')}/browse/{key}"
+def _combo(key: str, date: str) -> str:
+    """Format a ticket key and date into a single readable cell value."""
+    if key and key != "—" and date and date != "—":
+        return f"{key}  ·  {date}"
+    return key or date or "—"
 
 
 def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") -> pd.DataFrame:
@@ -373,67 +373,49 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
         resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
         key = r.source_ticket or ""
         is_excluded = key.upper() in excluded
+        acs_col = _combo(r.source_ticket or "", created)
 
         if sla_num == 1:
             rows.append({
-                "Exclude":            is_excluded,
-                "_key":               key,
-                "ACS Ticket":         _ticket_url(jira_url, r.source_ticket),
-                "ACS Created":        created,
-                "First Comment Date": resolved,
-                "Business Days":      r.days_elapsed,
-                "Target":             r.target_days,
-                "Status":             status_icon,
-            })
-        elif sla_num in (2, 3):
-            resolution_label = "Ready for Config Date" if sla_num == 2 else "LPM Status Date"
-            rows.append({
                 "Exclude":         is_excluded,
                 "_key":            key,
-                "ACS Ticket":      _ticket_url(jira_url, r.source_ticket),
-                "ACS Created":     created,
-                "LPM Ticket":      _ticket_url(jira_url, r.target_ticket),
-                resolution_label:  resolved,
+                "ACS Ticket":      acs_col,
+                "First Comment":   resolved,
+                "Category":        r.category_migrated or "—",
                 "Business Days":   r.days_elapsed,
-                "Target":          r.target_days,
                 "Status":          status_icon,
+            })
+        elif sla_num in (2, 3):
+            lpm_label = "Ready for Config" if sla_num == 2 else "LPM Status Date"
+            lpm_col   = _combo(r.target_ticket or "", resolved)
+            acs_cat   = r.category_migrated or "—"
+            lpm_cat   = r.target_category or "—"
+            rows.append({
+                "Exclude":       is_excluded,
+                "_key":          key,
+                "ACS Ticket":    acs_col,
+                lpm_label:       lpm_col,
+                "ACS Category":  acs_cat,
+                "LPM Category":  lpm_cat,
+                "Business Days": r.days_elapsed,
+                "Status":        status_icon,
             })
         else:  # SLA 4 — Impact Report
             rows.append({
-                "Exclude":              is_excluded,
-                "_key":                 key,
-                "SR Sub-task":          _ticket_url(jira_url, r.source_ticket),
-                "Sub-task Created":     created,
-                "LPM Ticket":           _ticket_url(jira_url, r.lpm_category),
-                "ACS Ticket":           _ticket_url(jira_url, r.target_ticket),
-                "Impact Report Date":   resolved,
-                "Business Days":        r.days_elapsed,
-                "Target":               r.target_days,
-                "Status":               status_icon,
+                "Exclude":           is_excluded,
+                "_key":              key,
+                "SR Sub-task":       acs_col,
+                "LPM Ticket":        r.lpm_category or "—",
+                "ACS · Report Date": _combo(r.target_ticket or "", resolved),
+                "Business Days":     r.days_elapsed,
+                "Status":            status_icon,
             })
     return pd.DataFrame(rows)
 
 
-def _link_col(label: str) -> st.column_config.LinkColumn:
-    return st.column_config.LinkColumn(label, display_text=r".*/browse/(.+)")
-
-
 def _sla_column_config(sla_num: int, jira_url: str) -> dict:
-    if not jira_url:
-        return {}
-    if sla_num == 1:
-        return {"ACS Ticket": _link_col("ACS Ticket")}
-    elif sla_num in (2, 3):
-        return {
-            "ACS Ticket": _link_col("ACS Ticket"),
-            "LPM Ticket": _link_col("LPM Ticket"),
-        }
-    else:
-        return {
-            "SR Sub-task": _link_col("SR Sub-task"),
-            "LPM Ticket":  _link_col("LPM Ticket"),
-            "ACS Ticket":  _link_col("ACS Ticket"),
-        }
+    """No per-column config needed now that ticket+date are combined plain-text."""
+    return {}
 
 
 def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):

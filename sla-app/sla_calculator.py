@@ -100,7 +100,8 @@ class SLAResult:
         category_migrated: str = "",
         lpm_category: str = "",
         elapsed_time_str: Optional[str] = None,
-        lpm_candidates: list = None,  # [(lpm_key, transition_date_or_None), ...]
+        lpm_candidates: list = None,   # [(lpm_key, transition_date_or_None), ...]
+        target_category: str = "",     # category field of the linked LPM ticket
     ):
         self.source_ticket = source_ticket
         self.target_ticket = target_ticket
@@ -114,6 +115,7 @@ class SLAResult:
         self.lpm_category = lpm_category
         self.elapsed_time_str = elapsed_time_str
         self.lpm_candidates: list = lpm_candidates or []
+        self.target_category: str = target_category
 
     @property
     def is_met(self) -> bool:

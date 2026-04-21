@@ -632,6 +632,17 @@ class SLAChecker:
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
 
+        # Fetch LPM category for the winning ticket
+        target_category = ""
+        cat_field = self.field_ids.get("category", "")
+        if target_ticket and cat_field:
+            try:
+                lpm_data = self.jira.get_issue(target_ticket, fields=[cat_field])
+                target_category = extract_field_value(lpm_data.get("fields", {}).get(cat_field), default="")
+                self._log(f"  LPM category for {target_ticket}: {target_category}", "dim")
+            except Exception as e:
+                self._log(f"  Could not fetch LPM category for {target_ticket}: {e}", "dim")
+
         if resolved_date:
             days_elapsed = get_business_days(created_date, resolved_date)
         else:
@@ -657,6 +668,7 @@ class SLAChecker:
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
             lpm_candidates=candidates,
+            target_category=target_category,
         )
 
     def _evaluate_ticket(self, ticket: dict, sla_config: dict) -> SLAResult:
@@ -717,6 +729,17 @@ class SLAChecker:
         source_of_id = extract_field_value(fields.get(SOURCE_OF_ID_FIELD_ID), default="")
         category_migrated = extract_field_value(fields.get(CATEGORY_FIELD_ID), default="")
 
+        # Fetch LPM category for the winning ticket
+        target_category = ""
+        cat_field = self.field_ids.get("category", "")
+        if target_ticket and cat_field:
+            try:
+                lpm_data = self.jira.get_issue(target_ticket, fields=[cat_field])
+                target_category = extract_field_value(lpm_data.get("fields", {}).get(cat_field), default="")
+                self._log(f"  LPM category for {target_ticket}: {target_category}", "dim")
+            except Exception as e:
+                self._log(f"  Could not fetch LPM category for {target_ticket}: {e}", "dim")
+
         if resolved_date:
             days_elapsed = get_business_days(created_date, resolved_date)
         else:
@@ -748,4 +771,5 @@ class SLAChecker:
             source_of_identification=source_of_id,
             category_migrated=category_migrated,
             lpm_candidates=candidates,
+            target_category=target_category,
         )
