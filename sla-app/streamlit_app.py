@@ -294,7 +294,14 @@ def compliance_gauge(pct: float) -> go.Figure:
     return fig
 
 
-def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
+def _ticket_url(base_url: str, key) -> str:
+    """Return a Jira browse URL if key is valid, else the raw value."""
+    if not key or key == "—" or not base_url:
+        return key or "—"
+    return f"{base_url.rstrip('/')}/browse/{key}"
+
+
+def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") -> pd.DataFrame:
     rows = []
     fmt = "%b %d, %Y"
     for r in results:
@@ -304,7 +311,7 @@ def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
 
         if sla_num == 1:
             rows.append({
-                "ACS Ticket":         r.source_ticket,
+                "ACS Ticket":         _ticket_url(jira_url, r.source_ticket),
                 "ACS Created":        created,
                 "First Comment Date": resolved,
                 "Business Days":      r.days_elapsed,
@@ -314,9 +321,9 @@ def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
         elif sla_num in (2, 3):
             resolution_label = "Ready for Config Date" if sla_num == 2 else "LPM Status Date"
             rows.append({
-                "ACS Ticket":      r.source_ticket,
+                "ACS Ticket":      _ticket_url(jira_url, r.source_ticket),
                 "ACS Created":     created,
-                "LPM Ticket":      r.target_ticket or "—",
+                "LPM Ticket":      _ticket_url(jira_url, r.target_ticket),
                 resolution_label:  resolved,
                 "Business Days":   r.days_elapsed,
                 "Target":          r.target_days,
@@ -324,10 +331,10 @@ def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
             })
         else:  # SLA 4 — Impact Report
             rows.append({
-                "SR Sub-task":          r.source_ticket,
+                "SR Sub-task":          _ticket_url(jira_url, r.source_ticket),
                 "Sub-task Created":     created,
-                "LPM Ticket":           r.lpm_category or "—",
-                "ACS Ticket":           r.target_ticket or "—",
+                "LPM Ticket":           _ticket_url(jira_url, r.lpm_category),
+                "ACS Ticket":           _ticket_url(jira_url, r.target_ticket),
                 "Impact Report Date":   resolved,
                 "Business Days":        r.days_elapsed,
                 "Target":               r.target_days,
@@ -336,7 +343,29 @@ def styled_df(results: list[SLAResult], sla_num: int = 1) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int):
+def _link_col(label: str) -> st.column_config.LinkColumn:
+    return st.column_config.LinkColumn(label, display_text=r"[^/]+$")
+
+
+def _sla_column_config(sla_num: int, jira_url: str) -> dict:
+    if not jira_url:
+        return {}
+    if sla_num == 1:
+        return {"ACS Ticket": _link_col("ACS Ticket")}
+    elif sla_num in (2, 3):
+        return {
+            "ACS Ticket": _link_col("ACS Ticket"),
+            "LPM Ticket": _link_col("LPM Ticket"),
+        }
+    else:
+        return {
+            "SR Sub-task": _link_col("SR Sub-task"),
+            "LPM Ticket":  _link_col("LPM Ticket"),
+            "ACS Ticket":  _link_col("ACS Ticket"),
+        }
+
+
+def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):
     compliance = summary.compliance_rate
     cc = compliance_color(compliance)
 
@@ -368,6 +397,8 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     with gauge_col:
         st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False}, key=f"gauge_{sla_num}")
 
+    col_cfg = _sla_column_config(sla_num, jira_url)
+
     # Tables
     tab_b, tab_p, tab_m = st.tabs([
         f"🔴 Breached ({summary.breached_count})",
@@ -376,17 +407,17 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     ])
     with tab_b:
         if summary.breached_results:
-            st.dataframe(styled_df(summary.breached_results, sla_num), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.breached_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
         else:
             st.success("No breached tickets!")
     with tab_p:
         if summary.in_progress_results:
-            st.dataframe(styled_df(summary.in_progress_results, sla_num), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.in_progress_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
         else:
             st.info("No in-progress tickets.")
     with tab_m:
         if summary.met_results:
-            st.dataframe(styled_df(summary.met_results, sla_num), use_container_width=True, hide_index=True)
+            st.dataframe(styled_df(summary.met_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
         else:
             st.info("No resolved tickets in this range.")
 
@@ -414,6 +445,15 @@ with st.sidebar:
     st.markdown("### Date Range *(optional)*")
     date_from = st.date_input("Start date", value=None)
     date_to   = st.date_input("End date",   value=None)
+
+    st.markdown("---")
+    st.markdown("### Exclude Tickets *(optional)*")
+    exclude_input = st.text_area(
+        "Ticket keys to exclude",
+        placeholder="ACS-123, LPM-456, SR-789",
+        help="Comma-separated ticket keys to omit from all SLA calculations",
+        height=80,
+    )
 
     st.markdown("---")
     run_btn = st.button("▶ Run SLA Checks", type="primary", use_container_width=True)
@@ -514,6 +554,21 @@ with st.spinner("Checking SLA 4: Impact Report Delivery..."):
 progress_bar.progress(100, text="Done!")
 progress_bar.empty()
 
+# ── Apply ticket exclusions ───────────────────────────────────────────────────
+excluded_keys: set[str] = set()
+if exclude_input:
+    excluded_keys = {k.strip().upper() for k in exclude_input.split(",") if k.strip()}
+
+if excluded_keys:
+    for s in summaries:
+        if s:
+            s.results = [
+                r for r in s.results
+                if (r.source_ticket or "").upper() not in excluded_keys
+                and (r.target_ticket or "").upper() not in excluded_keys
+                and (r.lpm_category or "").upper() not in excluded_keys
+            ]
+
 # ── Executive summary ─────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(f"""
@@ -585,6 +640,6 @@ for sla_num, title, caption, target, summary, error, _ in SLA_DEFS:
         else:
             st.warning("No fix version tickets found either.")
     else:
-        display_sla_section(summary, sla_num, title, caption, target)
+        display_sla_section(summary, sla_num, title, caption, target, jira_url=jira_url)
 
     st.markdown("<br>", unsafe_allow_html=True)
