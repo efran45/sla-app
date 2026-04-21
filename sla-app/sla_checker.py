@@ -129,6 +129,7 @@ class SLAChecker:
         sr_project = sla_config["sr_project"]
         acs_project = sla_config["acs_project"]
         target_days = sla_config["target_days"]
+        seen_subtask_keys = set()
 
         for lpm_ticket in lpm_tickets:
             lpm_key = lpm_ticket.get("key")
@@ -199,6 +200,11 @@ class SLAChecker:
                     if not earliest_subtask_date:
                         self._log(f"    Could not determine sub-task creation date for {linked_key}, skipping", "dim")
                         continue
+
+                    if earliest_subtask_key in seen_subtask_keys:
+                        self._log(f"    Skipping sub-task {earliest_subtask_key}: already counted via another LPM link", "dim")
+                        continue
+                    seen_subtask_keys.add(earliest_subtask_key)
 
                     self._log(f"    Using sub-task {earliest_subtask_key} created: {earliest_subtask_date}", "dim")
 
