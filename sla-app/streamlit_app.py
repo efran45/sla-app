@@ -304,13 +304,18 @@ def _ticket_url(base_url: str, key) -> str:
 def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") -> pd.DataFrame:
     rows = []
     fmt = "%b %d, %Y"
+    excluded = st.session_state.get("excluded_keys", set())
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
         created  = r.created_date.strftime(fmt)  if r.created_date  else "—"
         resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
+        key = r.source_ticket or ""
+        is_excluded = key.upper() in excluded
 
         if sla_num == 1:
             rows.append({
+                "Exclude":            is_excluded,
+                "_key":               key,
                 "ACS Ticket":         _ticket_url(jira_url, r.source_ticket),
                 "ACS Created":        created,
                 "First Comment Date": resolved,
@@ -321,6 +326,8 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
         elif sla_num in (2, 3):
             resolution_label = "Ready for Config Date" if sla_num == 2 else "LPM Status Date"
             rows.append({
+                "Exclude":         is_excluded,
+                "_key":            key,
                 "ACS Ticket":      _ticket_url(jira_url, r.source_ticket),
                 "ACS Created":     created,
                 "LPM Ticket":      _ticket_url(jira_url, r.target_ticket),
@@ -331,6 +338,8 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
             })
         else:  # SLA 4 — Impact Report
             rows.append({
+                "Exclude":              is_excluded,
+                "_key":                 key,
                 "SR Sub-task":          _ticket_url(jira_url, r.source_ticket),
                 "Sub-task Created":     created,
                 "LPM Ticket":           _ticket_url(jira_url, r.lpm_category),
@@ -344,7 +353,7 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
 
 
 def _link_col(label: str) -> st.column_config.LinkColumn:
-    return st.column_config.LinkColumn(label, display_text=r"[^/]+$")
+    return st.column_config.LinkColumn(label, display_text=r".*/browse/(.+)")
 
 
 def _sla_column_config(sla_num: int, jira_url: str) -> dict:
@@ -397,30 +406,61 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
     with gauge_col:
         st.plotly_chart(compliance_gauge(compliance), use_container_width=True, config={"displayModeBar": False}, key=f"gauge_{sla_num}")
 
-    col_cfg = _sla_column_config(sla_num, jira_url)
+    link_cfg = _sla_column_config(sla_num, jira_url)
 
-    # Tables
+    def _show_table(results: list[SLAResult], tab_key: str) -> bool:
+        if not results:
+            return False
+        df = styled_df(results, sla_num, jira_url)
+        visible = ["Exclude"] + [c for c in df.columns if c not in ("Exclude", "_key")]
+        col_cfg = {
+            "_key": None,
+            "Exclude": st.column_config.CheckboxColumn(
+                "Excl.",
+                help="Check to exclude this ticket on the next run",
+                default=False,
+                width="small",
+            ),
+            **link_cfg,
+        }
+        edited = st.data_editor(
+            df,
+            column_config=col_cfg,
+            column_order=visible,
+            disabled=[c for c in df.columns if c != "Exclude"],
+            hide_index=True,
+            use_container_width=True,
+            key=f"tbl_{sla_num}_{tab_key}",
+        )
+        for _, row in edited.iterrows():
+            k = str(row.get("_key", "")).strip().upper()
+            if not k:
+                continue
+            if row.get("Exclude", False):
+                st.session_state.excluded_keys.add(k)
+            else:
+                st.session_state.excluded_keys.discard(k)
+        return True
+
     tab_b, tab_p, tab_m = st.tabs([
         f"🔴 Breached ({summary.breached_count})",
         f"🟡 In Progress ({summary.in_progress_count})",
         f"✅ Met ({summary.met_count})",
     ])
     with tab_b:
-        if summary.breached_results:
-            st.dataframe(styled_df(summary.breached_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
-        else:
+        if not _show_table(summary.breached_results, "b"):
             st.success("No breached tickets!")
     with tab_p:
-        if summary.in_progress_results:
-            st.dataframe(styled_df(summary.in_progress_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
-        else:
+        if not _show_table(summary.in_progress_results, "p"):
             st.info("No in-progress tickets.")
     with tab_m:
-        if summary.met_results:
-            st.dataframe(styled_df(summary.met_results, sla_num, jira_url), use_container_width=True, hide_index=True, column_config=col_cfg)
-        else:
+        if not _show_table(summary.met_results, "m"):
             st.info("No resolved tickets in this range.")
 
+
+# ── Session state ─────────────────────────────────────────────────────────────
+if "excluded_keys" not in st.session_state:
+    st.session_state.excluded_keys = set()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 saved = load_config()
@@ -447,13 +487,16 @@ with st.sidebar:
     date_to   = st.date_input("End date",   value=None)
 
     st.markdown("---")
-    st.markdown("### Exclude Tickets *(optional)*")
-    exclude_input = st.text_area(
-        "Ticket keys to exclude",
-        placeholder="ACS-123, LPM-456, SR-789",
-        help="Comma-separated ticket keys to omit from all SLA calculations",
-        height=80,
-    )
+    excl = st.session_state.excluded_keys
+    excl_count = len(excl)
+    st.markdown(f"### Excluded Tickets ({excl_count})")
+    if excl_count:
+        st.caption(", ".join(sorted(excl)))
+        if st.button("Clear All Exclusions", use_container_width=True):
+            st.session_state.excluded_keys = set()
+            st.rerun()
+    else:
+        st.caption("Check the **Excl.** box on any ticket row to exclude it from the next run.")
 
     st.markdown("---")
     run_btn = st.button("▶ Run SLA Checks", type="primary", use_container_width=True)
@@ -479,7 +522,91 @@ st.markdown("""
 <p style='color:#64748b;margin-top:0'>LA Blue &nbsp;·&nbsp; ACS → LPM → SR &nbsp;·&nbsp; Business-day tracking</p>
 """, unsafe_allow_html=True)
 
-if not run_btn:
+if run_btn:
+    if not jira_url or not jira_email or not jira_token:
+        st.error("Please fill in all three Jira credential fields in the sidebar.")
+        st.stop()
+
+    save_config({"jira_base_url": jira_url, "jira_email": jira_email})
+
+    with st.spinner("Connecting to Jira..."):
+        try:
+            client = JiraClient(base_url=jira_url, email=jira_email, token=jira_token)
+            user_info = client.test_connection()
+        except Exception as e:
+            st.error(f"Connection failed: {e}")
+            st.stop()
+
+    date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
+    date_to_str   = date_to.strftime("%Y-%m-%d")   if date_to   else None
+
+    checker = SLAChecker(client, verbose=verbose, date_from=date_from_str, date_to=date_to_str)
+    checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
+    checker.set_field_id("category",    JIRA_FIELDS["category"])
+
+    summaries = [None, None, None, None]
+    errors    = [None, None, None, None]
+
+    progress_bar = st.progress(0, text="Fetching SLA data from Jira...")
+
+    with st.spinner("Checking SLA 1: Time to First Response..."):
+        try:
+            summaries[0] = checker.check_first_response()
+        except Exception as e:
+            errors[0] = str(e)
+    progress_bar.progress(25, text="SLA 1 done · Checking SLA 2...")
+
+    with st.spinner("Checking SLA 2: Identification of Resolution..."):
+        try:
+            summaries[1] = checker.check_identification_resolution_config()
+        except Exception as e:
+            errors[1] = str(e)
+    progress_bar.progress(50, text="SLA 2 done · Checking SLA 3...")
+
+    with st.spinner("Checking SLA 3: Resolution of Config Issues..."):
+        try:
+            summaries[2] = checker.check_resolution_config()
+        except Exception as e:
+            errors[2] = str(e)
+    progress_bar.progress(75, text="SLA 3 done · Checking SLA 4...")
+
+    with st.spinner("Checking SLA 4: Impact Report Delivery..."):
+        try:
+            summaries[3] = checker.check_impact_report_delivery()
+        except Exception as e:
+            errors[3] = str(e)
+    progress_bar.progress(100, text="Done!")
+    progress_bar.empty()
+
+    # Apply any accumulated exclusions
+    excl = st.session_state.excluded_keys
+    if excl:
+        for s in summaries:
+            if s:
+                s.results = [
+                    r for r in s.results
+                    if (r.source_ticket or "").upper() not in excl
+                    and (r.target_ticket or "").upper() not in excl
+                    and (r.lpm_category or "").upper() not in excl
+                ]
+
+    # Pre-fetch fix-version fallback if SLA 4 is empty
+    fix_version_data = None
+    if summaries[3] is not None and summaries[3].total_count == 0:
+        fix_version_data = checker.get_recent_fix_version_lpm_tickets()
+
+    st.session_state.sla_summaries     = summaries
+    st.session_state.sla_errors        = errors
+    st.session_state.fix_version_data  = fix_version_data
+    st.session_state.run_meta          = {
+        "user": user_info.get("displayName", jira_email),
+        "jira_url": jira_url,
+        "date_from_str": date_from_str,
+        "date_to_str": date_to_str,
+    }
+
+# Show placeholder if no data yet
+if "sla_summaries" not in st.session_state:
     st.markdown("---")
     st.markdown("""
 <div style='background:linear-gradient(135deg,#ffffff,#f1f5f9);border-radius:14px;padding:32px;text-align:center;border:1px solid #e2e8f0'>
@@ -488,7 +615,6 @@ if not run_btn:
   <p style='color:#64748b;margin:0'>Enter your Jira credentials in the sidebar and click <b style='color:#2563eb'>▶ Run SLA Checks</b></p>
 </div>
 """, unsafe_allow_html=True)
-
     c1, c2, c3, c4 = st.columns(4)
     with c1: kpi_card("First Response", "2 bd", "Target", C_NEUTRAL)
     with c2: kpi_card("ID Resolution",  "30 bd", "Target", C_NEUTRAL)
@@ -496,78 +622,10 @@ if not run_btn:
     with c4: kpi_card("Impact Report", "30 bd", "Target", C_NEUTRAL)
     st.stop()
 
-# Validate
-if not jira_url or not jira_email or not jira_token:
-    st.error("Please fill in all three Jira credential fields in the sidebar.")
-    st.stop()
-
-save_config({"jira_base_url": jira_url, "jira_email": jira_email})
-
-# Connect
-with st.spinner("Connecting to Jira..."):
-    try:
-        client = JiraClient(base_url=jira_url, email=jira_email, token=jira_token)
-        user_info = client.test_connection()
-    except Exception as e:
-        st.error(f"Connection failed: {e}")
-        st.stop()
-
-date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
-date_to_str   = date_to.strftime("%Y-%m-%d")   if date_to   else None
-
-checker = SLAChecker(client, verbose=verbose, date_from=date_from_str, date_to=date_to_str)
-checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
-checker.set_field_id("category",    JIRA_FIELDS["category"])
-
-# ── Fetch all four SLAs ───────────────────────────────────────────────────────
-summaries = [None, None, None, None]
-errors    = [None, None, None, None]
-
-progress_bar = st.progress(0, text="Fetching SLA data from Jira...")
-
-with st.spinner("Checking SLA 1: Time to First Response..."):
-    try:
-        summaries[0] = checker.check_first_response()
-    except Exception as e:
-        errors[0] = str(e)
-progress_bar.progress(25, text="SLA 1 done · Checking SLA 2...")
-
-with st.spinner("Checking SLA 2: Identification of Resolution..."):
-    try:
-        summaries[1] = checker.check_identification_resolution_config()
-    except Exception as e:
-        errors[1] = str(e)
-progress_bar.progress(50, text="SLA 2 done · Checking SLA 3...")
-
-with st.spinner("Checking SLA 3: Resolution of Config Issues..."):
-    try:
-        summaries[2] = checker.check_resolution_config()
-    except Exception as e:
-        errors[2] = str(e)
-progress_bar.progress(75, text="SLA 3 done · Checking SLA 4...")
-
-with st.spinner("Checking SLA 4: Impact Report Delivery..."):
-    try:
-        summaries[3] = checker.check_impact_report_delivery()
-    except Exception as e:
-        errors[3] = str(e)
-progress_bar.progress(100, text="Done!")
-progress_bar.empty()
-
-# ── Apply ticket exclusions ───────────────────────────────────────────────────
-excluded_keys: set[str] = set()
-if exclude_input:
-    excluded_keys = {k.strip().upper() for k in exclude_input.split(",") if k.strip()}
-
-if excluded_keys:
-    for s in summaries:
-        if s:
-            s.results = [
-                r for r in s.results
-                if (r.source_ticket or "").upper() not in excluded_keys
-                and (r.target_ticket or "").upper() not in excluded_keys
-                and (r.lpm_category or "").upper() not in excluded_keys
-            ]
+summaries        = st.session_state.sla_summaries
+errors           = st.session_state.sla_errors
+fix_version_data = st.session_state.get("fix_version_data")
+run_meta         = st.session_state.run_meta
 
 # ── Executive summary ─────────────────────────────────────────────────────────
 st.markdown("---")
@@ -575,8 +633,8 @@ st.markdown(f"""
 <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>
   <h2 style='margin:0;font-size:1.3rem;color:#1e293b'>Executive Summary</h2>
   <span style='color:#64748b;font-size:0.8rem'>
-    Connected as <b style='color:#2563eb'>{user_info.get("displayName", jira_email)}</b>
-    {"&nbsp;·&nbsp; " + date_from_str + " → " + (date_to_str or "today") if date_from_str else ""}
+    Connected as <b style='color:#2563eb'>{run_meta["user"]}</b>
+    {"&nbsp;·&nbsp; " + run_meta["date_from_str"] + " → " + (run_meta["date_to_str"] or "today") if run_meta.get("date_from_str") else ""}
   </span>
 </div>
 """, unsafe_allow_html=True)
@@ -615,13 +673,13 @@ st.markdown("---")
 
 # ── Individual SLA sections ───────────────────────────────────────────────────
 SLA_DEFS = [
-    (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                          2,  summaries[0], errors[0], checker.check_first_response),
-    (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",              30, summaries[1], errors[1], None),
-    (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'",     60, summaries[2], errors[2], None),
-    (4, "Impact Report Delivery",                         "SR sub-task creation → 'impact report' comment on linked ACS ticket",      30, summaries[3], errors[3], None),
+    (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                      2,  summaries[0], errors[0]),
+    (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",          30, summaries[1], errors[1]),
+    (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'", 60, summaries[2], errors[2]),
+    (4, "Impact Report Delivery",                         "SR sub-task creation → 'impact report' comment on linked ACS ticket",  30, summaries[3], errors[3]),
 ]
 
-for sla_num, title, caption, target, summary, error, _ in SLA_DEFS:
+for sla_num, title, caption, target, summary, error in SLA_DEFS:
     if error:
         st.error(f"SLA {sla_num} error: {error}")
         continue
@@ -634,7 +692,6 @@ for sla_num, title, caption, target, summary, error, _ in SLA_DEFS:
         </div>
         """, unsafe_allow_html=True)
         st.info("No SR sub-tasks found via direct LPM links. Showing fix version tickets instead.")
-        fix_version_data = checker.get_recent_fix_version_lpm_tickets()
         if fix_version_data:
             st.dataframe(fix_version_data, use_container_width=True, hide_index=True)
         else:
