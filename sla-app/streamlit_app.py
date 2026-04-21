@@ -363,6 +363,13 @@ def _combo(key: str, date: str) -> str:
     return key or date or "—"
 
 
+def _turl(base_url: str, key) -> str:
+    """Return a Jira browse URL, or empty string if key/url missing."""
+    if not key or key == "—" or not base_url:
+        return ""
+    return f"{base_url.rstrip('/')}/browse/{key}"
+
+
 def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") -> pd.DataFrame:
     rows = []
     fmt = "%b %d, %Y"
@@ -380,6 +387,7 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
                 "Exclude":         is_excluded,
                 "_key":            key,
                 "ACS Ticket":      acs_col,
+                "_acs_url":        _turl(jira_url, r.source_ticket),
                 "First Comment":   resolved,
                 "Category":        r.category_migrated or "—",
                 "Business Days":   r.days_elapsed,
@@ -388,15 +396,15 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
         elif sla_num in (2, 3):
             lpm_label = "Ready for Config" if sla_num == 2 else "LPM Status Date"
             lpm_col   = _combo(r.target_ticket or "", resolved)
-            acs_cat   = r.category_migrated or "—"
-            lpm_cat   = r.target_category or "—"
             rows.append({
                 "Exclude":       is_excluded,
                 "_key":          key,
                 "ACS Ticket":    acs_col,
+                "_acs_url":      _turl(jira_url, r.source_ticket),
                 lpm_label:       lpm_col,
-                "ACS Category":  acs_cat,
-                "LPM Category":  lpm_cat,
+                "_lpm_url":      _turl(jira_url, r.target_ticket),
+                "ACS Category":  r.category_migrated or "—",
+                "LPM Category":  r.target_category or "—",
                 "Business Days": r.days_elapsed,
                 "Status":        status_icon,
             })
@@ -405,8 +413,11 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
                 "Exclude":           is_excluded,
                 "_key":              key,
                 "SR Sub-task":       acs_col,
+                "_sr_url":           _turl(jira_url, r.source_ticket),
                 "LPM Ticket":        r.lpm_category or "—",
+                "_lpm_url":          _turl(jira_url, r.lpm_category),
                 "ACS · Report Date": _combo(r.target_ticket or "", resolved),
+                "_acs_url":          _turl(jira_url, r.target_ticket),
                 "Business Days":     r.days_elapsed,
                 "Status":            status_icon,
             })
@@ -414,8 +425,16 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
 
 
 def _sla_column_config(sla_num: int, jira_url: str) -> dict:
-    """No per-column config needed now that ticket+date are combined plain-text."""
-    return {}
+    """Narrow ↗ link columns placed right after each combined ticket+date column."""
+    if not jira_url:
+        return {}
+    _lnk = lambda: st.column_config.LinkColumn("↗", display_text="↗", width="small")
+    if sla_num == 1:
+        return {"_acs_url": _lnk()}
+    elif sla_num in (2, 3):
+        return {"_acs_url": _lnk(), "_lpm_url": _lnk()}
+    else:
+        return {"_sr_url": _lnk(), "_lpm_url": _lnk(), "_acs_url": _lnk()}
 
 
 def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):
