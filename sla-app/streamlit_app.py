@@ -356,18 +356,13 @@ def compliance_gauge(pct: float) -> go.Figure:
     return fig
 
 
-def _combo(key: str, date: str) -> str:
-    """Format a ticket key and date into a single readable cell value."""
-    if key and key != "—" and date and date != "—":
-        return f"{key}  ·  {date}"
-    return key or date or "—"
-
-
-def _turl(base_url: str, key) -> str:
-    """Return a Jira browse URL, or empty string if key/url missing."""
-    if not key or key == "—" or not base_url:
-        return ""
-    return f"{base_url.rstrip('/')}/browse/{key}"
+def _ticket_cell(base_url: str, key: str) -> str:
+    """Cell value for a ticket column: full browse URL when available, else plain key."""
+    if not key or key == "—":
+        return "—"
+    if base_url:
+        return f"{base_url.rstrip('/')}/browse/{key}"
+    return key
 
 
 def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") -> pd.DataFrame:
@@ -376,65 +371,66 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
     excluded = st.session_state.get("excluded_keys", set())
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
-        created  = r.created_date.strftime(fmt)  if r.created_date  else "—"
+        created  = r.created_date.strftime(fmt) if r.created_date  else "—"
         resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
         key = r.source_ticket or ""
         is_excluded = key.upper() in excluded
-        acs_col = _combo(r.source_ticket or "", created)
 
         if sla_num == 1:
             rows.append({
+                "Exclude":        is_excluded,
+                "_key":           key,
+                "ACS Ticket":     _ticket_cell(jira_url, r.source_ticket),
+                "ACS Category":   r.category_migrated or "—",
+                "ACS Created":    created,
+                "First Comment":  resolved,
+                "Business Days":  r.days_elapsed,
+                "Status":         status_icon,
+            })
+        elif sla_num in (2, 3):
+            lpm_date_label = "Ready for Config" if sla_num == 2 else "LPM Status Date"
+            rows.append({
                 "Exclude":         is_excluded,
                 "_key":            key,
-                "ACS Ticket":      acs_col,
-                "_acs_url":        _turl(jira_url, r.source_ticket),
-                "First Comment":   resolved,
-                "Category":        r.category_migrated or "—",
+                "ACS Ticket":      _ticket_cell(jira_url, r.source_ticket),
+                "ACS Category":    r.category_migrated or "—",
+                "ACS Created":     created,
+                "LPM Ticket":      _ticket_cell(jira_url, r.target_ticket),
+                "LPM Category":    r.target_category or "—",
+                lpm_date_label:    resolved,
                 "Business Days":   r.days_elapsed,
                 "Status":          status_icon,
             })
-        elif sla_num in (2, 3):
-            lpm_label = "Ready for Config" if sla_num == 2 else "LPM Status Date"
-            lpm_col   = _combo(r.target_ticket or "", resolved)
-            rows.append({
-                "Exclude":       is_excluded,
-                "_key":          key,
-                "ACS Ticket":    acs_col,
-                "_acs_url":      _turl(jira_url, r.source_ticket),
-                lpm_label:       lpm_col,
-                "_lpm_url":      _turl(jira_url, r.target_ticket),
-                "ACS Category":  r.category_migrated or "—",
-                "LPM Category":  r.target_category or "—",
-                "Business Days": r.days_elapsed,
-                "Status":        status_icon,
-            })
         else:  # SLA 4 — Impact Report
             rows.append({
-                "Exclude":           is_excluded,
-                "_key":              key,
-                "SR Sub-task":       acs_col,
-                "_sr_url":           _turl(jira_url, r.source_ticket),
-                "LPM Ticket":        r.lpm_category or "—",
-                "_lpm_url":          _turl(jira_url, r.lpm_category),
-                "ACS · Report Date": _combo(r.target_ticket or "", resolved),
-                "_acs_url":          _turl(jira_url, r.target_ticket),
-                "Business Days":     r.days_elapsed,
-                "Status":            status_icon,
+                "Exclude":            is_excluded,
+                "_key":               key,
+                "SR Sub-task":        _ticket_cell(jira_url, r.source_ticket),
+                "SR Created":         created,
+                "LPM Ticket":         _ticket_cell(jira_url, r.lpm_category),
+                "ACS Ticket":         _ticket_cell(jira_url, r.target_ticket),
+                "Impact Report Date": resolved,
+                "Business Days":      r.days_elapsed,
+                "Status":             status_icon,
             })
     return pd.DataFrame(rows)
 
 
 def _sla_column_config(sla_num: int, jira_url: str) -> dict:
-    """Narrow ↗ link columns placed right after each combined ticket+date column."""
+    """LinkColumn config for ticket key columns — display_text regex shows just the key."""
     if not jira_url:
         return {}
-    _lnk = lambda: st.column_config.LinkColumn("↗", display_text="↗", width="small")
+    lnk = lambda lbl: st.column_config.LinkColumn(lbl, display_text=r".*/browse/(.+)")
     if sla_num == 1:
-        return {"_acs_url": _lnk()}
+        return {"ACS Ticket": lnk("ACS Ticket")}
     elif sla_num in (2, 3):
-        return {"_acs_url": _lnk(), "_lpm_url": _lnk()}
+        return {"ACS Ticket": lnk("ACS Ticket"), "LPM Ticket": lnk("LPM Ticket")}
     else:
-        return {"_sr_url": _lnk(), "_lpm_url": _lnk(), "_acs_url": _lnk()}
+        return {
+            "SR Sub-task": lnk("SR Sub-task"),
+            "LPM Ticket":  lnk("LPM Ticket"),
+            "ACS Ticket":  lnk("ACS Ticket"),
+        }
 
 
 def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):
