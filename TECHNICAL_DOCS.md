@@ -146,7 +146,7 @@ Represents the SLA evaluation result for a single ticket.
 | `status` | `str` | `"met"`, `"breached"`, or `"in_progress"` |
 | `source_of_identification` | `str` | Value of the Source of ID custom field |
 | `category_migrated` | `str` | Category of the ACS ticket |
-| `lpm_category` | `str` | Overloaded: LPM ticket key for SLA 4 (Impact Report) |
+| `lpm_category` | `str` | Overloaded: parent SR ticket key for SLA 4 (Impact Report) — shown as "SR Parent" in the UI |
 | `elapsed_time_str` | `str \| None` | Formatted elapsed time (SLA 1 only, e.g. `"1d 4h 32m"`) |
 | `lpm_candidates` | `list` | List of `(lpm_key, transition_date)` tuples for all LPM tickets that reached the target status — used by the override picker |
 | `target_category` | `str` | Category field value of the winning LPM ticket |
@@ -211,15 +211,14 @@ Same logic as SLA 2, but looks for LPM tickets that reached any of: `"Deployed t
 
 **SLA 4 — Impact Report Delivery (target: 30 business days)**
 
-More complex chain:
+Queries the SR project directly for LA Blue sub-tasks:
 
-1. Queries LA Blue LPM tickets
-2. For each LPM ticket, finds linked SR project tickets
-3. For each SR ticket, checks that it has sub-tasks (skips if none)
-4. Finds the earliest-created non-canceled sub-task — this is the SLA start
-5. Deduplicates: if the same SR sub-task appears via multiple LPM links, it is only counted once
-6. Finds ACS tickets linked to the SR ticket, then scans their comments for a public comment containing the text "impact report"
-7. Measures business days from sub-task creation to that comment
+1. JQL: `project = SR AND issuetype = Sub-task AND "Health Plan" = "LA Blue"` (plus any date filters)
+2. Skips canceled sub-tasks
+3. Uses each sub-task's creation date as the SLA start
+4. Looks up the sub-task's parent SR ticket and finds all ACS tickets linked to it
+5. Scans those ACS tickets for a public comment containing the text "impact report"
+6. Measures business days from sub-task creation to that comment
 
 #### `_evaluate_ticket()` and `_evaluate_ticket_resolution()`
 
