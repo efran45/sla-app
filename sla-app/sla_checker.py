@@ -98,12 +98,14 @@ class SLAChecker:
         """
         Check the "Impact Report Delivery" SLA.
 
-        Chain: LPM (LA Blue health plan) -> SR ticket linked with any link type
-               -> SR ticket has a sub-task -> ACS ticket linked to SR
-               -> public comment with impact report attachment on ACS ticket
+        Queries the SR project directly for all Sub-task issues with Health Plan = LA Blue.
+        For each sub-task:
+          - SLA start: sub-task creation date
+          - SLA end:   first public "impact report" comment on the ACS ticket linked
+                       to the sub-task's parent SR ticket
+          - Target:    30 business days
 
-        SLA: Time from SR sub-task creation to impact report comment on ACS ticket
-             must be <= 30 business days.
+        lpm_category is repurposed to store the parent SR ticket key for display.
         """
         sla_config = SLA_DEFINITIONS["impact_report_delivery"]
         summary = SLASummary(
@@ -112,120 +114,64 @@ class SLAChecker:
         )
 
         health_plan_field = self.field_ids.get("health_plan", "")
+        acs_project = sla_config["acs_project"]
+        target_days = sla_config["target_days"]
 
         jql = (
-            f'project = {sla_config["lpm_project"]} '
+            f'project = {sla_config["sr_project"]} '
+            f'AND issuetype = Sub-task '
             f'AND "{sla_config["health_plan_field"]}" = "{sla_config["health_plan_value"]}"'
             f'{self._date_filter_jql()}'
         )
 
         self._log(f"[Impact Report SLA] JQL Query: {jql}", "yellow")
 
-        fields = ["key", "created", "summary", "status", "issuelinks", health_plan_field]
-        lpm_tickets = self.jira.search_issues(jql, fields=fields)
+        fields = ["key", "created", "summary", "status", "parent", "issuelinks", health_plan_field]
+        subtasks = self.jira.search_issues(jql, fields=fields)
 
-        self._log(f"[Impact Report SLA] LPM tickets returned: {len(lpm_tickets)}", "green")
+        self._log(f"[Impact Report SLA] SR sub-tasks returned: {len(subtasks)}", "green")
 
-        sr_project = sla_config["sr_project"]
-        acs_project = sla_config["acs_project"]
-        target_days = sla_config["target_days"]
-        seen_subtask_keys = set()
+        for subtask in subtasks:
+            subtask_key = subtask.get("key")
+            subtask_fields = subtask.get("fields", {})
 
-        for lpm_ticket in lpm_tickets:
-            lpm_key = lpm_ticket.get("key")
-            lpm_fields = lpm_ticket.get("fields", {})
-            issue_links = lpm_fields.get("issuelinks", [])
+            self._log(f"\n--- [Impact Report] Processing sub-task {subtask_key} ---", "bold cyan")
 
-            self._log(f"\n--- [Impact Report] Processing LPM {lpm_key} ({len(issue_links)} links) ---", "bold cyan")
+            subtask_status = (subtask_fields.get("status", {}).get("name") or "").lower()
+            if subtask_status in {"cancelled", "canceled"}:
+                self._log(f"  Skipping {subtask_key}: canceled", "dim")
+                continue
 
-            for link in issue_links:
-                linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
-                if not linked_issue:
-                    continue
+            created_date = parse_jira_date(subtask_fields.get("created"))
+            if not created_date:
+                self._log(f"  Skipping {subtask_key}: could not parse creation date", "dim")
+                continue
 
-                linked_key = linked_issue.get("key", "")
-                if not linked_key.startswith(sr_project):
-                    continue
+            # Parent SR ticket — used to find the linked ACS ticket
+            parent_key = (subtask_fields.get("parent") or {}).get("key", "")
+            self._log(f"  Parent SR ticket: {parent_key or 'none'}", "dim")
 
-                # Skip canceled SR tickets (status is embedded in the link object)
-                linked_status = (linked_issue.get("fields", {}).get("status", {}).get("name") or "").lower()
-                if linked_status in {"cancelled", "canceled"}:
-                    self._log(f"  Skipping {linked_key}: canceled", "dim")
-                    continue
+            report_comment_date = None
+            acs_ticket_key = None
 
-                self._log(f"  Found SR ticket: {linked_key}", "dim")
-
+            if parent_key:
                 try:
-                    sr_data = self.jira.get_issue(
-                        linked_key,
-                        fields=["key", "created", "summary", "status", "issuelinks", "subtasks"],
-                    )
-                    sr_fields = sr_data.get("fields", {})
+                    parent_data = self.jira.get_issue(parent_key, fields=["issuelinks"])
+                    parent_links = parent_data.get("fields", {}).get("issuelinks", [])
 
-                    sr_status_name = (sr_fields.get("status", {}).get("name") or "").lower()
-                    if sr_status_name in {"cancelled", "canceled"}:
-                        self._log(f"    Skipping {linked_key}: SR ticket is canceled", "dim")
-                        continue
-
-                    subtasks = sr_fields.get("subtasks", [])
-                    if not subtasks:
-                        self._log(f"    Skipping {linked_key}: has no sub-tasks", "dim")
-                        continue
-
-                    self._log(f"    SR ticket {linked_key} has {len(subtasks)} sub-task(s)", "dim")
-
-                    # Find the earliest non-canceled sub-task creation date as the SLA start
-                    earliest_subtask_key = None
-                    earliest_subtask_date = None
-
-                    for subtask in subtasks:
-                        subtask_key = subtask.get("key", "")
-                        if not subtask_key:
+                    for link in parent_links:
+                        linked_issue = link.get("outwardIssue") or link.get("inwardIssue")
+                        if not linked_issue:
                             continue
-                        try:
-                            subtask_data = self.jira.get_issue(subtask_key, fields=["key", "created", "status"])
-                            subtask_fields = subtask_data.get("fields", {})
-                            subtask_status = (subtask_fields.get("status", {}).get("name") or "").lower()
-                            if subtask_status in {"cancelled", "canceled"}:
-                                self._log(f"    Skipping sub-task {subtask_key}: canceled", "dim")
-                                continue
-                            subtask_created = parse_jira_date(subtask_fields.get("created"))
-                            if subtask_created and (earliest_subtask_date is None or subtask_created < earliest_subtask_date):
-                                earliest_subtask_date = subtask_created
-                                earliest_subtask_key = subtask_key
-                        except Exception as e:
-                            self._log(f"    Error fetching sub-task {subtask_key}: {e}", "red")
-                            continue
-
-                    if not earliest_subtask_date:
-                        self._log(f"    Could not determine sub-task creation date for {linked_key}, skipping", "dim")
-                        continue
-
-                    if earliest_subtask_key in seen_subtask_keys:
-                        self._log(f"    Skipping sub-task {earliest_subtask_key}: already counted via another LPM link", "dim")
-                        continue
-                    seen_subtask_keys.add(earliest_subtask_key)
-
-                    self._log(f"    Using sub-task {earliest_subtask_key} created: {earliest_subtask_date}", "dim")
-
-                    # Find ACS tickets linked to the SR ticket and look for impact report comment
-                    sr_links = sr_fields.get("issuelinks", [])
-                    report_comment_date = None
-                    acs_ticket_key = None
-
-                    for sr_link in sr_links:
-                        acs_issue = sr_link.get("outwardIssue") or sr_link.get("inwardIssue")
-                        if not acs_issue:
-                            continue
-                        acs_key = acs_issue.get("key", "")
+                        acs_key = linked_issue.get("key", "")
                         if not acs_key.startswith(acs_project):
                             continue
 
-                        self._log(f"    Found ACS ticket linked to SR: {acs_key}", "dim")
+                        self._log(f"  Found ACS ticket linked to SR parent: {acs_key}", "dim")
 
                         try:
                             comments = self.jira.get_issue_comments(acs_key)
-                            self._log(f"      {len(comments)} comments on {acs_key}", "dim")
+                            self._log(f"    {len(comments)} comments on {acs_key}", "dim")
 
                             for comment in comments:
                                 if self._comment_is_impact_report(comment):
@@ -233,39 +179,35 @@ class SLAChecker:
                                     if comment_date and (report_comment_date is None or comment_date < report_comment_date):
                                         report_comment_date = comment_date
                                         acs_ticket_key = acs_key
-                                        self._log(f"      MATCH! Impact report comment on {acs_key} at {comment_date}", "green")
+                                        self._log(f"    MATCH! Impact report comment on {acs_key} at {comment_date}", "green")
 
                         except Exception as e:
-                            self._log(f"      Error fetching comments for {acs_key}: {e}", "red")
+                            self._log(f"    Error fetching comments for {acs_key}: {e}", "red")
                             continue
 
-                    if report_comment_date:
-                        days_elapsed = get_business_days(earliest_subtask_date, report_comment_date)
-                    else:
-                        days_elapsed = get_business_days_elapsed(earliest_subtask_date)
-
-                    if report_comment_date:
-                        status = "met" if days_elapsed <= target_days else "breached"
-                    else:
-                        status = "breached" if days_elapsed > target_days else "in_progress"
-
-                    self._log(f"  Result for {linked_key}: {status} ({days_elapsed} biz days)", "bold")
-
-                    result = SLAResult(
-                        source_ticket=earliest_subtask_key,
-                        target_ticket=acs_ticket_key,
-                        created_date=earliest_subtask_date,
-                        resolved_date=report_comment_date,
-                        days_elapsed=days_elapsed,
-                        target_days=target_days,
-                        status=status,
-                        lpm_category=lpm_key,
-                    )
-                    summary.add_result(result)
-
                 except Exception as e:
-                    self._log(f"  Error processing SR ticket {linked_key}: {e}", "red")
-                    continue
+                    self._log(f"  Error fetching parent SR ticket {parent_key}: {e}", "red")
+
+            if report_comment_date:
+                days_elapsed = get_business_days(created_date, report_comment_date)
+                status = "met" if days_elapsed <= target_days else "breached"
+            else:
+                days_elapsed = get_business_days_elapsed(created_date)
+                status = "breached" if days_elapsed > target_days else "in_progress"
+
+            self._log(f"  Result: {status} ({days_elapsed} biz days)", "bold")
+
+            result = SLAResult(
+                source_ticket=subtask_key,
+                target_ticket=acs_ticket_key,
+                created_date=created_date,
+                resolved_date=report_comment_date,
+                days_elapsed=days_elapsed,
+                target_days=target_days,
+                status=status,
+                lpm_category=parent_key,  # parent SR ticket key — shown as "SR Parent" in the UI
+            )
+            summary.add_result(result)
 
         return summary
 

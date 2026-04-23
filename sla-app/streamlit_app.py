@@ -407,7 +407,7 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
                 "_key":               key,
                 "SR Sub-task":        _ticket_cell(jira_url, r.source_ticket),
                 "SR Created":         created,
-                "LPM Ticket":         _ticket_cell(jira_url, r.lpm_category),
+                "SR Parent":          _ticket_cell(jira_url, r.lpm_category),
                 "ACS Ticket":         _ticket_cell(jira_url, r.target_ticket),
                 "Impact Report Date": resolved,
                 "Business Days":      r.days_elapsed,
@@ -428,7 +428,7 @@ def _sla_column_config(sla_num: int, jira_url: str) -> dict:
     else:
         return {
             "SR Sub-task": lnk("SR Sub-task"),
-            "LPM Ticket":  lnk("LPM Ticket"),
+            "SR Parent":   lnk("SR Parent"),
             "ACS Ticket":  lnk("ACS Ticket"),
         }
 
@@ -791,7 +791,7 @@ SLA_DEFS = [
     (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                      2,  summaries[0], errors[0]),
     (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",          30, summaries[1], errors[1]),
     (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'", 60, summaries[2], errors[2]),
-    (4, "Impact Report Delivery",                         "SR sub-task creation → 'impact report' comment on linked ACS ticket",  30, summaries[3], errors[3]),
+    (4, "Impact Report Delivery",                         "SR sub-task (LA Blue) creation → 'impact report' comment on linked ACS ticket",  30, summaries[3], errors[3]),
 ]
 
 for sla_num, title, caption, target, summary, error in SLA_DEFS:
