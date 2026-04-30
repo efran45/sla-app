@@ -2,6 +2,7 @@
 Healthcare SLA Dashboard - Streamlit Web App
 """
 import json
+import re
 import sys
 import streamlit as st
 import plotly.graph_objects as go
@@ -433,6 +434,33 @@ def _sla_column_config(sla_num: int, jira_url: str) -> dict:
         }
 
 
+_SLA_PLAIN_ENGLISH = {
+    1: (
+        "When a new support ticket arrives from an LA Blue member, the team has <b>2 business days</b> to post "
+        "the first public reply. We pull every LA Blue ticket from the ACS project and measure the time from "
+        "when the ticket was created to when the first visible comment was added — by anyone on the team."
+    ),
+    2: (
+        "After an LA Blue support ticket is opened, the team has <b>30 business days</b> to identify a fix. "
+        "We track this by watching for when a linked work ticket in the LPM project first reaches "
+        "<b>'Ready for Config'</b> status. The clock starts the moment the ACS support ticket is created "
+        "and stops when that status is reached."
+    ),
+    3: (
+        "The full configuration fix must be completed within <b>60 business days</b> of the original support "
+        "ticket opening. We watch the linked LPM work ticket and stop the clock when it reaches "
+        "<b>'Deployed to UAT'</b>, <b>'Waiting for UAT Signoff'</b>, or <b>'Done'</b> — whichever comes first. "
+        "The clock starts at ACS ticket creation."
+    ),
+    4: (
+        "When a software release affects LA Blue members, an impact report must be delivered within "
+        "<b>30 business days</b>. The clock starts when an SR sub-task is created for that release. "
+        "It stops when a public comment containing the words <b>'impact report'</b> is posted on the "
+        "linked ACS support ticket."
+    ),
+}
+
+
 def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: str, target_days: int, jira_url: str = ""):
     st.markdown(f"""
     <div class="sla-section-header">
@@ -440,6 +468,15 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
         <p class="sla-section-sub">{caption}</p>
     </div>
     """, unsafe_allow_html=True)
+
+    desc = _SLA_PLAIN_ENGLISH.get(sla_num)
+    if desc:
+        st.markdown(
+            f'<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
+            f'padding:11px 16px;margin:4px 0 18px 0;color:#0c4a6e;font-size:0.88rem;line-height:1.65">'
+            f'{desc}</div>',
+            unsafe_allow_html=True,
+        )
 
     if summary.total_count == 0:
         st.warning("No tickets found matching this SLA criteria.")
@@ -664,8 +701,12 @@ if run_btn:
 
     progress_bar = st.progress(0, text="Fetching SLA data from Jira...")
 
+    def _section(msg):
+        log_collector.append({"level": "section", "message": msg, "time": datetime.now().strftime("%H:%M:%S")})
+
     with st.spinner("Checking SLA 1: Time to First Response..."):
         try:
+            _section("SLA 1 — Time to First Response")
             summaries[0] = checker.check_first_response()
         except Exception as e:
             errors[0] = str(e)
@@ -673,6 +714,7 @@ if run_btn:
 
     with st.spinner("Checking SLA 2: Identification of Resolution..."):
         try:
+            _section("SLA 2 — Identification of Resolution")
             summaries[1] = checker.check_identification_resolution_config()
         except Exception as e:
             errors[1] = str(e)
@@ -680,6 +722,7 @@ if run_btn:
 
     with st.spinner("Checking SLA 3: Resolution of Config Issues..."):
         try:
+            _section("SLA 3 — Resolution of Config Issues")
             summaries[2] = checker.check_resolution_config()
         except Exception as e:
             errors[2] = str(e)
@@ -687,6 +730,7 @@ if run_btn:
 
     with st.spinner("Checking SLA 4: Impact Report Delivery..."):
         try:
+            _section("SLA 4 — Impact Report Delivery")
             summaries[3] = checker.check_impact_report_delivery()
         except Exception as e:
             errors[3] = str(e)
@@ -824,70 +868,125 @@ with tab_dashboard:
 # ── Log tab ───────────────────────────────────────────────────────────────────
 with tab_log:
     _LEVEL_STYLE = {
-        "error":   {"border": "#dc2626", "bg": "#fee2e2",  "badge_bg": "#dc2626", "badge_fg": "#ffffff", "label": "ERROR"},
-        "success": {"border": "#16a34a", "bg": "#dcfce7",  "badge_bg": "#16a34a", "badge_fg": "#ffffff", "label": "OK"},
-        "info":    {"border": "#2563eb", "bg": "#dbeafe",  "badge_bg": "#2563eb", "badge_fg": "#ffffff", "label": "INFO"},
-        "detail":  {"border": "#cbd5e1", "bg": "#f8fafc",  "badge_bg": "#94a3b8", "badge_fg": "#ffffff", "label": "DETAIL"},
+        "error":   {"border": "#dc2626", "bg": "#fee2e2", "badge_bg": "#dc2626", "badge_fg": "#ffffff", "label": "ERROR"},
+        "success": {"border": "#16a34a", "bg": "#dcfce7", "badge_bg": "#16a34a", "badge_fg": "#ffffff", "label": "OK"},
+        "info":    {"border": "#2563eb", "bg": "#dbeafe", "badge_bg": "#2563eb", "badge_fg": "#ffffff", "label": "INFO"},
+        "detail":  {"border": "#cbd5e1", "bg": "#f8fafc", "badge_bg": "#94a3b8", "badge_fg": "#ffffff", "label": "DETAIL"},
     }
+    _STATUS_ICON  = {"met": "✅", "breached": "🔴", "in_progress": "🟡"}
+    _TICKET_RE    = re.compile(r'---.*?([A-Z]+-\d+).*?---')
+    _RESULT_RE    = re.compile(r'Result:\s*(met|breached|in_progress)')
+
+    def _entry_html(e):
+        s   = _LEVEL_STYLE.get(e["level"], _LEVEL_STYLE["detail"])
+        msg = e["message"].strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return (
+            f'<div style="display:flex;align-items:flex-start;gap:8px;padding:4px 10px;'
+            f'border-left:3px solid {s["border"]};background:{s["bg"]};margin:1px 0;border-radius:0 3px 3px 0">'
+            f'<span style="color:#94a3b8;font-family:monospace;font-size:0.73rem;white-space:nowrap;padding-top:2px">{e["time"]}</span>'
+            f'<span style="background:{s["badge_bg"]};color:{s["badge_fg"]};font-size:0.63rem;font-weight:700;'
+            f'padding:1px 5px;border-radius:3px;white-space:nowrap;letter-spacing:0.05em;margin-top:2px">{s["label"]}</span>'
+            f'<span style="font-family:monospace;font-size:0.80rem;color:#1e293b;word-break:break-word">{msg}</span>'
+            f'</div>'
+        )
 
     if not run_logs:
         st.info("No log data yet. Run SLA Checks to generate a log.")
     else:
-        total = len(run_logs)
-        error_count   = sum(1 for e in run_logs if e["level"] == "error")
-        success_count = sum(1 for e in run_logs if e["level"] == "success")
-        info_count    = sum(1 for e in run_logs if e["level"] == "info")
+        content_logs  = [e for e in run_logs if e.get("level") != "section"]
+        total         = len(content_logs)
+        error_count   = sum(1 for e in content_logs if e["level"] == "error")
+        success_count = sum(1 for e in content_logs if e["level"] == "success")
+        info_count    = sum(1 for e in content_logs if e["level"] == "info")
 
         lc1, lc2, lc3, lc4 = st.columns(4)
         lc1.metric("Total entries", total)
-        lc2.metric("Info", info_count)
-        lc3.metric("OK", success_count)
-        lc4.metric("Errors", error_count)
+        lc2.metric("Info",          info_count)
+        lc3.metric("OK",            success_count)
+        lc4.metric("Errors",        error_count)
 
         st.markdown("---")
 
         search = st.text_input(
             "Search logs",
             placeholder="Type a ticket number, keyword, or status to filter…",
-            help="Searches the message text of every log entry.",
+            help="Searching by ticket key (e.g. ACS-123) shows every line for that ticket.",
         )
-
         level_filter = st.multiselect(
             "Filter by level",
             options=["INFO", "OK", "DETAIL", "ERROR"],
             default=["INFO", "OK", "DETAIL", "ERROR"],
         )
-        level_map = {"INFO": "info", "OK": "success", "DETAIL": "detail", "ERROR": "error"}
+        level_map      = {"INFO": "info", "OK": "success", "DETAIL": "detail", "ERROR": "error"}
         selected_levels = {level_map[l] for l in level_filter}
 
-        filtered = [
-            e for e in run_logs
-            if e["level"] in selected_levels
-            and (not search or search.lower() in e["message"].lower())
-        ]
+        # ── Group entries: section markers → SLA groups, ticket headers → ticket groups ──
+        groups        = []
+        current_group = None
 
-        st.caption(f"Showing {len(filtered)} of {total} entries")
+        for entry in run_logs:
+            msg = entry["message"]
+            if entry.get("level") == "section":
+                if current_group and current_group["entries"]:
+                    groups.append(current_group)
+                current_group = {"key": None, "label": f"⚙️  {msg}", "entries": [], "is_ticket": False}
+            elif _TICKET_RE.search(msg):
+                m = _TICKET_RE.search(msg)
+                if current_group and current_group["entries"]:
+                    groups.append(current_group)
+                current_group = {"key": m.group(1), "label": m.group(1), "entries": [entry], "is_ticket": True}
+            else:
+                if current_group is None:
+                    current_group = {"key": None, "label": "⚙️  General", "entries": [], "is_ticket": False}
+                current_group["entries"].append(entry)
 
-        rows = []
-        for e in filtered:
-            s = _LEVEL_STYLE.get(e["level"], _LEVEL_STYLE["detail"])
-            msg = e["message"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            rows.append(
-                f'<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;'
-                f'border-left:3px solid {s["border"]};background:{s["bg"]};margin:2px 0;border-radius:0 4px 4px 0">'
-                f'<span style="color:#94a3b8;font-family:monospace;font-size:0.75rem;white-space:nowrap;padding-top:1px">{e["time"]}</span>'
-                f'<span style="background:{s["badge_bg"]};color:{s["badge_fg"]};font-size:0.65rem;font-weight:700;'
-                f'padding:2px 6px;border-radius:3px;white-space:nowrap;letter-spacing:0.05em">{s["label"]}</span>'
-                f'<span style="font-family:monospace;font-size:0.82rem;color:#1e293b;word-break:break-word">{msg}</span>'
-                f'</div>'
-            )
+        if current_group and current_group["entries"]:
+            groups.append(current_group)
 
-        if rows:
-            st.markdown(
-                '<div style="height:620px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px">'
-                + "".join(rows)
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-        else:
+        # Resolve result label for each ticket group
+        for group in groups:
+            if not group["is_ticket"]:
+                continue
+            for entry in group["entries"]:
+                rm = _RESULT_RE.search(entry["message"])
+                if rm:
+                    status = rm.group(1)
+                    icon   = _STATUS_ICON.get(status, "📋")
+                    label  = status.replace("_", " ").title()
+                    group["label"] = f"{icon}  {group['key']}  —  {label}"
+                    break
+            else:
+                group["label"] = f"📋  {group['key']}"
+
+        # ── Filter per group, then render ─────────────────────────────────────
+        def _filter_group(group):
+            lvl_ok = lambda e: e["level"] in selected_levels
+            if not search:
+                return [e for e in group["entries"] if lvl_ok(e)]
+            # Ticket-key match → show all level-filtered entries for that ticket
+            if group["key"] and search.lower() in group["key"].lower():
+                return [e for e in group["entries"] if lvl_ok(e)]
+            return [e for e in group["entries"] if lvl_ok(e) and search.lower() in e["message"].lower()]
+
+        visible = [(g, _filter_group(g)) for g in groups]
+        visible = [(g, ents) for g, ents in visible if ents]
+
+        ticket_count = sum(1 for g, _ in visible if g["is_ticket"])
+        entry_count  = sum(len(ents) for _, ents in visible)
+        st.caption(f"Showing {ticket_count} tickets · {entry_count} log entries")
+
+        for group, entries in visible:
+            if group["is_ticket"]:
+                expander_label = group["label"]
+            else:
+                expander_label = f"{group['label']}  ({len(entries)} entries)"
+            with st.expander(expander_label, expanded=False):
+                st.markdown(
+                    '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:4px">'
+                    + "".join(_entry_html(e) for e in entries)
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+        if not visible:
             st.info("No entries match your search.")
