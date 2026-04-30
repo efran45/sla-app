@@ -615,7 +615,6 @@ with st.sidebar:
 
     st.markdown("---")
     run_btn = st.button("▶ Run SLA Checks", type="primary", use_container_width=True)
-    verbose = st.checkbox("Verbose logging")
 
     st.markdown("---")
     st.markdown("""
@@ -655,7 +654,8 @@ if run_btn:
     date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
     date_to_str   = date_to.strftime("%Y-%m-%d")   if date_to   else None
 
-    checker = SLAChecker(client, verbose=verbose, date_from=date_from_str, date_to=date_to_str)
+    log_collector = []
+    checker = SLAChecker(client, verbose=True, log_collector=log_collector, date_from=date_from_str, date_to=date_to_str)
     checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
     checker.set_field_id("category",    JIRA_FIELDS["category"])
 
@@ -713,6 +713,7 @@ if run_btn:
     st.session_state.sla_summaries     = summaries
     st.session_state.sla_errors        = errors
     st.session_state.fix_version_data  = fix_version_data
+    st.session_state.run_logs          = log_collector
     st.session_state.run_meta          = {
         "user": user_info.get("displayName", jira_email),
         "jira_url": jira_url,
@@ -740,11 +741,15 @@ if "sla_summaries" not in st.session_state:
 summaries        = st.session_state.sla_summaries
 errors           = st.session_state.sla_errors
 fix_version_data = st.session_state.get("fix_version_data")
+run_logs         = st.session_state.get("run_logs", [])
 run_meta         = st.session_state.run_meta
 
-# ── Executive summary ─────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown(f"""
+tab_dashboard, tab_log = st.tabs(["📊 Dashboard", "📋 Log"])
+
+# ── Dashboard tab ─────────────────────────────────────────────────────────────
+with tab_dashboard:
+    st.markdown("---")
+    st.markdown(f"""
 <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>
   <h2 style='margin:0;font-size:1.3rem;color:#1e293b'>Executive Summary</h2>
   <span style='color:#64748b;font-size:0.8rem'>
@@ -754,64 +759,135 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Overall compliance
-valid = [s for s in summaries if s and s.total_count > 0]
-if valid:
-    total_resolved = sum(s.met_count + s.breached_count for s in valid)
-    total_met      = sum(s.met_count for s in valid)
-    overall_pct    = (total_met / total_resolved * 100) if total_resolved else 100.0
-else:
-    overall_pct = 0.0
-
-oc1, oc2, oc3, oc4, oc5 = st.columns(5)
-with oc1:
-    kpi_card("Overall Compliance", f"{overall_pct:.0f}%",
-             sub="All 4 SLAs combined", color=compliance_color(overall_pct))
-for i, (s, label, target) in enumerate(zip(summaries, SLA_LABELS, SLA_TARGETS)):
-    col = [oc2, oc3, oc4, oc5][i]
-    with col:
-        if s and s.total_count > 0:
-            pct = s.compliance_rate
-            kpi_card(label.replace("\n", " "), f"{pct:.0f}%",
-                     sub=f"{s.met_count}/{s.met_count+s.breached_count} resolved", color=compliance_color(pct))
-        elif errors[i]:
-            kpi_card(label.replace("\n", " "), "ERR", sub="See below", color=C_BREACHED)
-        else:
-            kpi_card(label.replace("\n", " "), "—", sub="No data", color="#e2e8f0")
-
-# Overview stacked bar
-if any(s and s.total_count > 0 for s in summaries):
-    st.markdown("#### Ticket Volume by SLA")
-    st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "staticPlot": True}, key="overview_bar")
-
-st.markdown("---")
-
-# ── Individual SLA sections ───────────────────────────────────────────────────
-SLA_DEFS = [
-    (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                      2,  summaries[0], errors[0]),
-    (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",          30, summaries[1], errors[1]),
-    (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'", 60, summaries[2], errors[2]),
-    (4, "Impact Report Delivery",                         "SR sub-task (LA Blue) creation → 'impact report' comment on linked ACS ticket",  30, summaries[3], errors[3]),
-]
-
-for sla_num, title, caption, target, summary, error in SLA_DEFS:
-    if error:
-        st.error(f"SLA {sla_num} error: {error}")
-        continue
-
-    if sla_num == 4 and summary and summary.total_count == 0:
-        st.markdown(f"""
-        <div class="sla-section-header">
-            <p class="sla-section-title">SLA 4 &nbsp;·&nbsp; {title}</p>
-            <p class="sla-section-sub">{caption}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.info("No SR sub-tasks found via direct LPM links. Showing fix version tickets instead.")
-        if fix_version_data:
-            st.dataframe(fix_version_data, use_container_width=True, hide_index=True)
-        else:
-            st.warning("No fix version tickets found either.")
+    # Overall compliance
+    valid = [s for s in summaries if s and s.total_count > 0]
+    if valid:
+        total_resolved = sum(s.met_count + s.breached_count for s in valid)
+        total_met      = sum(s.met_count for s in valid)
+        overall_pct    = (total_met / total_resolved * 100) if total_resolved else 100.0
     else:
-        display_sla_section(summary, sla_num, title, caption, target, jira_url=jira_url)
+        overall_pct = 0.0
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    oc1, oc2, oc3, oc4, oc5 = st.columns(5)
+    with oc1:
+        kpi_card("Overall Compliance", f"{overall_pct:.0f}%",
+                 sub="All 4 SLAs combined", color=compliance_color(overall_pct))
+    for i, (s, label, target) in enumerate(zip(summaries, SLA_LABELS, SLA_TARGETS)):
+        col = [oc2, oc3, oc4, oc5][i]
+        with col:
+            if s and s.total_count > 0:
+                pct = s.compliance_rate
+                kpi_card(label.replace("\n", " "), f"{pct:.0f}%",
+                         sub=f"{s.met_count}/{s.met_count+s.breached_count} resolved", color=compliance_color(pct))
+            elif errors[i]:
+                kpi_card(label.replace("\n", " "), "ERR", sub="See below", color=C_BREACHED)
+            else:
+                kpi_card(label.replace("\n", " "), "—", sub="No data", color="#e2e8f0")
+
+    # Overview stacked bar
+    if any(s and s.total_count > 0 for s in summaries):
+        st.markdown("#### Ticket Volume by SLA")
+        st.plotly_chart(overview_bar(summaries), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "staticPlot": True}, key="overview_bar")
+
+    st.markdown("---")
+
+    # ── Individual SLA sections ───────────────────────────────────────────────
+    SLA_DEFS = [
+        (1, "Time to First Response",                         "ACS creation → first public comment (any author)",                      2,  summaries[0], errors[0]),
+        (2, "Identification of Resolution for Config Issues", "ACS creation → linked LPM ticket reaches 'Ready for Config'",          30, summaries[1], errors[1]),
+        (3, "Resolution of Configuration Issues",             "ACS creation → linked LPM ticket reaches 'Deployed to UAT' / 'Done'", 60, summaries[2], errors[2]),
+        (4, "Impact Report Delivery",                         "SR sub-task (LA Blue) creation → 'impact report' comment on linked ACS ticket",  30, summaries[3], errors[3]),
+    ]
+
+    for sla_num, title, caption, target, summary, error in SLA_DEFS:
+        if error:
+            st.error(f"SLA {sla_num} error: {error}")
+            continue
+
+        if sla_num == 4 and summary and summary.total_count == 0:
+            st.markdown(f"""
+            <div class="sla-section-header">
+                <p class="sla-section-title">SLA 4 &nbsp;·&nbsp; {title}</p>
+                <p class="sla-section-sub">{caption}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.info("No SR sub-tasks found via direct LPM links. Showing fix version tickets instead.")
+            if fix_version_data:
+                st.dataframe(fix_version_data, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No fix version tickets found either.")
+        else:
+            display_sla_section(summary, sla_num, title, caption, target, jira_url=jira_url)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+# ── Log tab ───────────────────────────────────────────────────────────────────
+with tab_log:
+    _LEVEL_STYLE = {
+        "error":   {"border": "#dc2626", "bg": "#fee2e2",  "badge_bg": "#dc2626", "badge_fg": "#ffffff", "label": "ERROR"},
+        "success": {"border": "#16a34a", "bg": "#dcfce7",  "badge_bg": "#16a34a", "badge_fg": "#ffffff", "label": "OK"},
+        "info":    {"border": "#2563eb", "bg": "#dbeafe",  "badge_bg": "#2563eb", "badge_fg": "#ffffff", "label": "INFO"},
+        "detail":  {"border": "#cbd5e1", "bg": "#f8fafc",  "badge_bg": "#94a3b8", "badge_fg": "#ffffff", "label": "DETAIL"},
+    }
+
+    if not run_logs:
+        st.info("No log data yet. Run SLA Checks to generate a log.")
+    else:
+        total = len(run_logs)
+        error_count   = sum(1 for e in run_logs if e["level"] == "error")
+        success_count = sum(1 for e in run_logs if e["level"] == "success")
+        info_count    = sum(1 for e in run_logs if e["level"] == "info")
+
+        lc1, lc2, lc3, lc4 = st.columns(4)
+        lc1.metric("Total entries", total)
+        lc2.metric("Info", info_count)
+        lc3.metric("OK", success_count)
+        lc4.metric("Errors", error_count)
+
+        st.markdown("---")
+
+        search = st.text_input(
+            "Search logs",
+            placeholder="Type a ticket number, keyword, or status to filter…",
+            help="Searches the message text of every log entry.",
+        )
+
+        level_filter = st.multiselect(
+            "Filter by level",
+            options=["INFO", "OK", "DETAIL", "ERROR"],
+            default=["INFO", "OK", "DETAIL", "ERROR"],
+        )
+        level_map = {"INFO": "info", "OK": "success", "DETAIL": "detail", "ERROR": "error"}
+        selected_levels = {level_map[l] for l in level_filter}
+
+        filtered = [
+            e for e in run_logs
+            if e["level"] in selected_levels
+            and (not search or search.lower() in e["message"].lower())
+        ]
+
+        st.caption(f"Showing {len(filtered)} of {total} entries")
+
+        rows = []
+        for e in filtered:
+            s = _LEVEL_STYLE.get(e["level"], _LEVEL_STYLE["detail"])
+            msg = e["message"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rows.append(
+                f'<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;'
+                f'border-left:3px solid {s["border"]};background:{s["bg"]};margin:2px 0;border-radius:0 4px 4px 0">'
+                f'<span style="color:#94a3b8;font-family:monospace;font-size:0.75rem;white-space:nowrap;padding-top:1px">{e["time"]}</span>'
+                f'<span style="background:{s["badge_bg"]};color:{s["badge_fg"]};font-size:0.65rem;font-weight:700;'
+                f'padding:2px 6px;border-radius:3px;white-space:nowrap;letter-spacing:0.05em">{s["label"]}</span>'
+                f'<span style="font-family:monospace;font-size:0.82rem;color:#1e293b;word-break:break-word">{msg}</span>'
+                f'</div>'
+            )
+
+        if rows:
+            st.markdown(
+                '<div style="height:620px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px">'
+                + "".join(rows)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("No entries match your search.")

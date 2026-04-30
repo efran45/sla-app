@@ -24,17 +24,31 @@ console = Console()
 class SLAChecker:
     """Checks SLA compliance by querying Jira."""
 
-    def __init__(self, jira_client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None):
+    def __init__(self, jira_client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None, log_collector: list = None):
         self.jira = jira_client
         self.field_ids = JIRA_FIELDS.copy()
         self.verbose = verbose
         self.date_from = date_from
         self.date_to = date_to
+        self.log_collector = log_collector
 
     def _log(self, message: str, style: str = "dim"):
-        """Print verbose log message."""
         if self.verbose:
             console.print(f"[{style}]{message}[/]")
+        if self.log_collector is not None:
+            if "red" in style:
+                level = "error"
+            elif "green" in style:
+                level = "success"
+            elif "yellow" in style or "cyan" in style or style == "bold":
+                level = "info"
+            else:
+                level = "detail"
+            self.log_collector.append({
+                "level": level,
+                "message": message,
+                "time": datetime.now().strftime("%H:%M:%S"),
+            })
 
     def set_field_id(self, field_name: str, field_id: str):
         """Set a custom field ID."""
@@ -246,16 +260,11 @@ class SLAChecker:
 
         self._log(f"Tickets returned from Jira: {len(source_tickets)}", "green")
 
-        if self.verbose and source_tickets:
-            console.print("\n[bold]Sample ticket data (first ticket):[/]")
+        if (self.verbose or self.log_collector is not None) and source_tickets:
             sample = source_tickets[0]
-            console.print(f"  Key: {sample.get('key')}")
-            console.print(f"  Fields: {list(sample.get('fields', {}).keys())}")
             sample_fields = sample.get('fields', {})
-            console.print(f"  Issue links count: {len(sample_fields.get('issuelinks', []))}")
-            if health_plan_field in sample_fields:
-                console.print(f"  Health plan value: {sample_fields.get(health_plan_field)}")
-            console.print()
+            self._log(f"Sample ticket: {sample.get('key')}  fields={list(sample_fields.keys())}", "dim")
+            self._log(f"  Issue links: {len(sample_fields.get('issuelinks', []))}  health_plan={sample_fields.get(health_plan_field)}", "dim")
 
         excluded_statuses = {"closed", "resolved", "canceled"}
 
