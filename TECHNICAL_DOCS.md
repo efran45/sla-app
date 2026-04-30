@@ -170,10 +170,11 @@ A collection of `SLAResult` objects for one SLA run.
 
 The core business logic layer. Queries Jira via `JiraClient` and returns `SLASummary` objects. Contains one public method per SLA plus internal helpers.
 
-#### `SLAChecker(jira_client, verbose, date_from, date_to)`
+#### `SLAChecker(jira_client, verbose, date_from, date_to, log_collector)`
 
 - `verbose`: if `True`, prints detailed JQL queries and per-ticket processing steps to the terminal
 - `date_from` / `date_to`: optional `YYYY-MM-DD` strings that restrict the ACS ticket query by creation date
+- `log_collector`: optional list; when provided, every `_log` call appends a dict `{"level", "message", "time"}` to this list in addition to (or instead of) printing to the terminal. Used by the Streamlit app to populate the Log tab.
 
 #### `_date_filter_jql()`
 
@@ -246,6 +247,7 @@ Three keys are persisted across reruns (e.g. when a user checks a checkbox):
 | `sla_summaries` | `list` | Cached `SLASummary` results from the last run |
 | `sla_errors` | `list` | Error strings from the last run, one per SLA |
 | `fix_version_data` | `list \| None` | SLA 4 fallback data if no SR sub-tasks found |
+| `run_logs` | `list` | All log entries collected during the last run — displayed in the Log tab |
 | `run_meta` | `dict` | Connected user, Jira URL, and date range from the last run |
 
 #### Configuration Persistence
@@ -295,18 +297,27 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 - Optional start/end date filter
 - Excluded Tickets list with a Clear All button
 - Run SLA Checks button
-- Verbose logging toggle
 - SLA target reference card
 
 #### Run Flow
 
 1. User fills in credentials and clicks **Run SLA Checks**
 2. `JiraClient` is initialized and `test_connection()` is called
-3. All four SLA checks run sequentially with a progress bar
-4. Excluded tickets are filtered out of results
-5. If SLA 4 is empty, fix-version fallback data is pre-fetched
-6. All results are stored in `st.session_state`
-7. The page renders from session state — subsequent checkbox/sort interactions do not re-query Jira
+3. A `log_collector` list is created and passed to `SLAChecker` (verbose mode is always on)
+4. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
+5. Excluded tickets are filtered out of results
+6. If SLA 4 is empty, fix-version fallback data is pre-fetched
+7. All results, errors, and the log are stored in `st.session_state`
+8. The page renders two top-level tabs — **📊 Dashboard** and **📋 Log** — from session state; subsequent checkbox/sort interactions do not re-query Jira
+
+#### Log Tab
+
+Displays all entries captured in `run_logs` during the last run:
+
+- **Summary metrics** — total entries, info, OK, and error counts
+- **Search box** — filters entries by message text in real time
+- **Level filter** — multiselect to show/hide INFO, OK, DETAIL, and ERROR entries
+- **Scrollable log view** — color-coded rows (blue = INFO, green = OK, gray = DETAIL, red = ERROR) with timestamps
 
 ---
 
