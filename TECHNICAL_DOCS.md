@@ -271,9 +271,13 @@ Sorts a list of `SLAResult` objects by one of seven criteria. The selected sort 
 **`apply_lpm_overrides(results, overrides)`**
 Returns a new list of results with any user-selected LPM ticket substituted in for the auto-selected one. Uses `copy.copy()` (shallow copy) so the original cached `SLASummary` is not mutated.
 
+**`_SLA_PLAIN_ENGLISH`**
+Module-level dict keyed by SLA number (1–4). Each value is an HTML string with a plain-language explanation of what the SLA measures and how the calculation works — written for readers with no Jira knowledge. Rendered as a light blue info card inside `display_sla_section`.
+
 **`display_sla_section(summary, sla_num, title, caption, target_days, jira_url)`**
 Renders a complete SLA section including:
 - Section header with title and caption
+- Plain-English description card (from `_SLA_PLAIN_ENGLISH`) explaining the SLA in non-technical terms
 - LPM override picker (SLAs 2 and 3 only, when multiple candidates exist)
 - Sort control
 - Five KPI cards (Total, Met, Breached, In Progress, Compliance Rate)
@@ -304,20 +308,30 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 1. User fills in credentials and clicks **Run SLA Checks**
 2. `JiraClient` is initialized and `test_connection()` is called
 3. A `log_collector` list is created and passed to `SLAChecker` (verbose mode is always on)
-4. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
-5. Excluded tickets are filtered out of results
-6. If SLA 4 is empty, fix-version fallback data is pre-fetched
-7. All results, errors, and the log are stored in `st.session_state`
-8. The page renders two top-level tabs — **📊 Dashboard** and **📋 Log** — from session state; subsequent checkbox/sort interactions do not re-query Jira
+4. Before each SLA check, a `section` marker entry is appended to `log_collector` (e.g. `"SLA 1 — Time to First Response"`) — used by the Log tab to group entries by SLA
+5. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
+6. Excluded tickets are filtered out of results
+7. If SLA 4 is empty, fix-version fallback data is pre-fetched
+8. All results, errors, and the log are stored in `st.session_state`
+9. The page renders two top-level tabs — **📊 Dashboard** and **📋 Log** — from session state; subsequent checkbox/sort interactions do not re-query Jira
 
 #### Log Tab
 
-Displays all entries captured in `run_logs` during the last run:
+Displays all entries captured in `run_logs` during the last run, grouped by ticket with collapsible expanders:
 
-- **Summary metrics** — total entries, info, OK, and error counts
-- **Search box** — filters entries by message text in real time
+- **Summary metrics** — total entries (excluding section markers), info, OK, and error counts
+- **Search box** — filters entries by message text; searching by ticket key (e.g. `ACS-123`) reveals all lines for that ticket, not just lines that literally contain the search text
 - **Level filter** — multiselect to show/hide INFO, OK, DETAIL, and ERROR entries
-- **Scrollable log view** — color-coded rows (blue = INFO, green = OK, gray = DETAIL, red = ERROR) with timestamps
+- **Grouped expanders** — each ticket gets its own collapsible row labelled with the ticket key and result (e.g. `✅ ACS-123 — Met`); JQL queries and other setup lines collapse under a `⚙️ SLA N —` expander for that SLA
+
+Log entry levels and their meaning:
+
+| Level | Color | Triggered by |
+|---|---|---|
+| INFO | Blue | JQL queries, section headers, status transitions found |
+| OK | Green | Ticket counts, successful matches |
+| DETAIL | Gray | Per-ticket field values, link checks, intermediate steps |
+| ERROR | Red | API errors, failed comment/changelog fetches |
 
 ---
 
