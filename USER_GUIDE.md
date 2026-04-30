@@ -1,0 +1,181 @@
+# Healthcare SLA Dashboard — User Guide
+
+This guide explains how to use the web dashboard: how to connect, what each section shows, how to read the results, and how to use the Log tab to understand what the tool did during a run.
+
+---
+
+## Getting Started
+
+Open the dashboard in your browser by running:
+
+```bash
+streamlit run sla-app/streamlit_app.py
+```
+
+The sidebar on the left is where you log in and control the run.
+
+### Connecting to Jira
+
+Fill in three fields in the sidebar:
+
+| Field | What to enter |
+|---|---|
+| **Jira URL** | Your company's Jira address, e.g. `https://yourcompany.atlassian.net` |
+| **Email** | The email address you use to log in to Jira |
+| **API Token** | A personal API token (not your password) — see below |
+
+Your Jira URL and email are saved automatically after the first successful run so you don't have to re-enter them. Your API token is **never** saved — you will need to paste it each session.
+
+**Getting an API token:**
+1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
+2. Click **Create API token**, give it a name, and copy it
+3. Paste it into the API Token field in the sidebar
+
+### Filtering by Date (Optional)
+
+Below the credentials, you can set a **Start date** and/or **End date** to limit results to tickets created within that range. Leave both blank to include all tickets.
+
+### Running the Checks
+
+Click **▶ Run SLA Checks**. The dashboard will connect to Jira, run all four SLA checks in sequence, and display the results. A progress bar shows which SLA is currently being checked. This typically takes 30–90 seconds depending on how many tickets exist.
+
+---
+
+## The Dashboard Tab
+
+After a run, the **📊 Dashboard** tab shows all results.
+
+### Executive Summary
+
+At the top you will see five KPI cards:
+
+- **Overall Compliance** — the combined compliance rate across all four SLAs (met tickets ÷ all resolved tickets)
+- **One card per SLA** — the compliance rate for each individual SLA, with a count of how many resolved tickets met vs. total resolved
+
+Below the KPIs, a stacked bar chart shows ticket volumes across all four SLAs so you can see at a glance which SLA has the most activity or the most breaches.
+
+### Understanding Compliance Rate
+
+The compliance rate only counts tickets that have a definitive outcome:
+
+- **Met** — the SLA milestone was reached within the target number of business days ✅
+- **Breached** — the SLA milestone was reached, but it took longer than the target 🔴
+
+Tickets that are still in progress (the milestone hasn't been reached yet) are shown separately and are **not** included in the compliance rate calculation. This means the rate reflects only completed cases.
+
+### SLA Sections
+
+Each of the four SLAs has its own section. Each section contains:
+
+**Plain-English description** — a light blue box explaining exactly what this SLA measures and where the clock starts and stops, in plain language.
+
+**KPI cards** — Total tickets, Met, Breached, In Progress, and Compliance Rate for this SLA specifically.
+
+**Bar chart** — shows business days elapsed per ticket (up to the 20 most recent), with a dashed red line marking the SLA target. Bars are colored green (met), red (breached), or amber (in progress).
+
+**Gauge** — a dial showing the compliance rate at a glance. Green = above 90%, yellow = 70–90%, red = below 70%.
+
+**Ticket tabs** — the tickets are split into three tabs:
+
+| Tab | What it shows |
+|---|---|
+| 🔴 Breached | Tickets that exceeded the SLA target |
+| 🟡 In Progress | Tickets still open; the clock is still running |
+| ✅ Met | Tickets that were resolved within the target |
+
+Each tab contains a table with one row per ticket. Ticket keys in the table are clickable links that open the ticket directly in Jira (when a Jira URL is set).
+
+### Sorting the Ticket Table
+
+Each SLA section has a **Sort by** dropdown above the charts. You can sort by:
+
+- Days elapsed (high → low or low → high)
+- Created date (newest or oldest first)
+- Ticket number (high → low or low → high)
+- Status (breached tickets first)
+
+The sort applies to both the chart and the table.
+
+### Excluding a Ticket
+
+If a ticket should not be counted (e.g. it was created in error or is a known exception), check the **Excl.** checkbox on its row in the table. The ticket will be excluded from the next run. The sidebar shows all currently excluded tickets and has a **Clear All Exclusions** button.
+
+### Overriding the Linked LPM Ticket (SLAs 2 and 3)
+
+When an ACS ticket is linked to more than one LPM ticket, the calculator automatically picks the one with the most recent status transition. If you want to use a different linked ticket, an **Override linked LPM ticket** expander appears at the top of SLAs 2 and 3. Open it to manually select which LPM ticket should be used for that ACS ticket. The change takes effect immediately without re-running.
+
+---
+
+## The Log Tab
+
+The **📋 Log** tab shows a complete record of everything the calculator did during the last run — every Jira query it sent, every ticket it evaluated, and the outcome for each one. It is useful for verifying results, understanding unexpected outcomes, and troubleshooting errors.
+
+### Summary Metrics
+
+At the top of the Log tab, four counters give a quick overview of the run:
+
+| Metric | Meaning |
+|---|---|
+| **Total entries** | Total number of log lines recorded |
+| **Info** | Queries sent, section headers, status transitions found |
+| **OK** | Successful matches and ticket counts |
+| **Errors** | Any API errors or failed data fetches |
+
+### Searching the Log
+
+The **Search logs** box filters the log in real time. Type any text and only matching entries will be shown.
+
+**Tip: searching by ticket key** (e.g. `ACS-123`) is especially useful — it will expand and show **every log line for that ticket**, not just the lines that happen to contain those characters. This makes it easy to trace exactly what happened for a specific ticket.
+
+### Filtering by Level
+
+The **Filter by level** multiselect lets you choose which types of entries to show:
+
+| Level | Color | What it contains |
+|---|---|---|
+| **INFO** | Blue | JQL queries sent to Jira, section headers, status transitions found |
+| **OK** | Green | Ticket counts returned, successful matches |
+| **DETAIL** | Gray | Per-ticket field values, link checks, intermediate steps |
+| **ERROR** | Red | API errors, failed comment or changelog fetches |
+
+If you only care about problems, deselect INFO, OK, and DETAIL to see only errors. If you want to see every step, keep all four selected.
+
+### Reading the Grouped Entries
+
+Log entries are organized into collapsible groups. Click any group to expand it.
+
+**⚙️ SLA N — [name]** groups contain the setup activity for that SLA: the JQL query that was sent to Jira, the field IDs used, and how many tickets were returned. These are collapsed by default since they are mostly useful for troubleshooting.
+
+**Ticket groups** each contain all the log lines for one specific ticket. The group title shows:
+- The ticket key (e.g. `ACS-123`)
+- The result: `✅ Met`, `🔴 Breached`, or `🟡 In Progress`
+
+Example: `✅  ACS-123  —  Met`
+
+Inside a ticket group you will typically see:
+
+1. Which linked LPM (or SR) tickets were found
+2. Whether each linked ticket reached the required status
+3. The date that status was reached (if found)
+4. The final business-day count and outcome
+
+**Error entries** (red) inside a ticket group mean the calculator could not fetch data for that ticket — usually a temporary Jira API issue. The ticket may show as In Progress as a result.
+
+---
+
+## Common Questions
+
+**Why is a ticket showing as In Progress when it seems resolved?**
+The calculator looks for a specific Jira status (e.g. "Ready for Config" for SLA 2). If the linked LPM ticket never officially reached that status in Jira's history, the calculator will not count it as complete. Open that ticket's log group to see exactly what statuses were found.
+
+**Why is the compliance rate different from what I expected?**
+The rate only includes resolved tickets (Met + Breached). In-progress tickets are not counted. If most tickets are still open, the rate may be based on a small sample.
+
+**A ticket appears in the wrong SLA section.**
+Each SLA pulls tickets independently from Jira using its own query. A ticket can appear in multiple SLA sections if it is relevant to more than one.
+
+**The run took a long time.**
+Each ticket requires one or more additional Jira API calls (to fetch comments, changelogs, or linked tickets). Runs with many tickets can take several minutes. The progress bar shows which SLA is currently being processed.
+
+**I see errors in the Log tab.**
+Errors are usually temporary Jira API issues (rate limiting or network timeouts). The calculator retries automatically. If a ticket repeatedly errors, open its log group and copy the error message for your Jira administrator.
