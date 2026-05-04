@@ -18,7 +18,7 @@ from rich.console import Console
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(Path(__file__).parent / ".env")
 except ImportError:
     pass
 

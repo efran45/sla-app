@@ -15,7 +15,7 @@ from datetime import datetime, date
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(Path(__file__).parent / ".env")
 except ImportError:
     pass
 
