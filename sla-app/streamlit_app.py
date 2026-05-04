@@ -672,30 +672,12 @@ if "sla_sort" not in st.session_state:
     st.session_state.sla_sort = {}
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
-saved = load_config()
+jira_url   = _ENV_URL
+jira_email = _ENV_EMAIL
+jira_token = _ENV_TOKEN
 
 with st.sidebar:
     st.markdown("## 🏥 SLA Dashboard")
-    st.markdown("---")
-    st.markdown("### Jira Credentials")
-
-    if _USING_ENV:
-        st.success("Credentials loaded from environment variables.")
-        jira_url   = _ENV_URL
-        jira_email = _ENV_EMAIL
-        jira_token = _ENV_TOKEN
-    else:
-        jira_url = st.text_input(
-            "Jira URL",
-            value=saved.get("jira_base_url", "https://yourcompany.atlassian.net"),
-            placeholder="https://yourcompany.atlassian.net",
-        )
-        jira_email = st.text_input("Email", value=saved.get("jira_email", ""))
-        jira_token = st.text_input(
-            "API Token", type="password",
-            help="Get yours at https://id.atlassian.com/manage-profile/security/api-tokens",
-        )
-
     st.markdown("---")
     st.markdown("### Date Range *(optional)*")
     date_from = st.date_input("Start date", value=None)
@@ -738,11 +720,9 @@ st.markdown("""
 
 if run_btn:
     if not jira_url or not jira_email or not jira_token:
-        st.error("Please fill in all three Jira credential fields in the sidebar.")
+        st.error("Jira credentials are not configured. Set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN in your .env file and restart the app.")
         st.stop()
 
-    if not _USING_ENV:
-        save_config({"jira_base_url": jira_url, "jira_email": jira_email})
 
     with st.spinner("Connecting to Jira..."):
         try:
