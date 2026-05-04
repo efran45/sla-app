@@ -16,7 +16,23 @@ The sidebar on the left is where you log in and control the run.
 
 ### Connecting to Jira
 
-Fill in three fields in the sidebar:
+There are two ways to provide credentials.
+
+#### Option A — Environment variables (no prompts)
+
+Set the following three environment variables before starting the app. The easiest way is a `.env` file in the `sla-app/` directory:
+
+```
+JIRA_BASE_URL=https://yourcompany.atlassian.net
+JIRA_EMAIL=you@yourcompany.com
+JIRA_API_TOKEN=your_token_here
+```
+
+When all three are set, the sidebar shows a green **"Credentials loaded from environment variables"** message and no form is shown. Just click **▶ Run SLA Checks**.
+
+#### Option B — Sidebar form
+
+If the environment variables are not set, fill in three fields in the sidebar:
 
 | Field | What to enter |
 |---|---|
@@ -24,12 +40,23 @@ Fill in three fields in the sidebar:
 | **Email** | The email address you use to log in to Jira |
 | **API Token** | A personal API token (not your password) — see below |
 
-Your Jira URL and email are saved automatically after the first successful run so you don't have to re-enter them. Your API token is **never** saved — you will need to paste it each session.
+Your Jira URL and email are saved automatically after the first run so you don't have to re-enter them. Your API token is **never** saved — you will need to paste it each session.
 
 **Getting an API token:**
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click **Create API token**, give it a name, and copy it
-3. Paste it into the API Token field in the sidebar
+3. Paste it into the API Token field in the sidebar (or set it as `JIRA_API_TOKEN`)
+
+### Connection Errors
+
+If the app cannot connect to Jira, it will display a specific error message:
+
+| Error | Likely cause |
+|---|---|
+| *Cannot reach Jira* | Wrong URL or no network access |
+| *Authentication failed (401)* | Wrong email address or API token |
+| *Access denied (403)* | Account lacks permission for this Jira instance |
+| *Jira URL not found (404)* | The URL path is incorrect |
 
 ### Filtering by Date (Optional)
 

@@ -7,12 +7,20 @@ For debug output: python main.py --verbose
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+import requests
 from datetime import datetime
 from rich.prompt import Prompt, Confirm
 from rich.console import Console
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from config import JIRA_FIELDS
 from jira_client import JiraClient
@@ -27,6 +35,16 @@ from display import (
 )
 
 CONFIG_FILE = Path(__file__).parent / ".config.json"
+
+
+def get_env_credentials() -> dict | None:
+    """Return credentials from environment variables, or None if not all three are set."""
+    base_url = os.environ.get("JIRA_BASE_URL", "").strip()
+    email    = os.environ.get("JIRA_EMAIL", "").strip()
+    token    = os.environ.get("JIRA_API_TOKEN", "").strip()
+    if base_url and email and token:
+        return {"base_url": base_url, "email": email, "token": token}
+    return None
 
 
 def load_config() -> dict:
@@ -79,6 +97,41 @@ def prompt_for_credentials(config: dict) -> dict:
         "email": email,
         "token": token,
     }
+
+
+def connect_to_jira(creds: dict):
+    """Create a JiraClient, test the connection, and return (client, user_info). Exits on failure."""
+    try:
+        client = JiraClient(
+            base_url=creds["base_url"],
+            email=creds["email"],
+            token=creds["token"],
+        )
+        user_info = client.test_connection()
+        return client, user_info
+    except requests.exceptions.ConnectionError:
+        display_error(
+            f"Cannot reach Jira at '{creds['base_url']}'. "
+            "Check JIRA_BASE_URL and your network connection."
+        )
+        sys.exit(1)
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        if status == 401:
+            display_error("Authentication failed (HTTP 401). Check your email address and API token.")
+        elif status == 403:
+            display_error("Access denied (HTTP 403). Your account may not have permission to access this Jira instance.")
+        elif status == 404:
+            display_error(f"Jira URL not found (HTTP 404). Verify that '{creds['base_url']}' is correct.")
+        else:
+            display_error(f"Jira returned HTTP {status}: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        display_error(str(e))
+        sys.exit(1)
+    except Exception as e:
+        display_error(f"Connection failed: {e}")
+        sys.exit(1)
 
 
 def prompt_for_date_range() -> tuple:
@@ -171,25 +224,20 @@ def main():
     if args.verbose:
         console.print("[yellow]Verbose mode enabled[/]\n")
 
-    config = load_config()
-    creds = prompt_for_credentials(config)
+    env_creds = get_env_credentials()
+    if env_creds:
+        console.print("[green]Using Jira credentials from environment variables.[/]\n")
+        creds = env_creds
+    else:
+        config = load_config()
+        creds = prompt_for_credentials(config)
+        save_config(config)
 
     console.print()
     display_info("Connecting to Jira...")
 
-    try:
-        client = JiraClient(
-            base_url=creds["base_url"],
-            email=creds["email"],
-            token=creds["token"],
-        )
-        user_info = client.test_connection()
-        display_success(f"Connected as: {user_info.get('displayName', 'Unknown')}")
-    except Exception as e:
-        display_error(f"Connection failed: {e}")
-        sys.exit(1)
-
-    save_config(config)
+    client, user_info = connect_to_jira(creds)
+    display_success(f"Connected as: {user_info.get('displayName', 'Unknown')}")
 
     date_from, date_to = prompt_for_date_range()
 

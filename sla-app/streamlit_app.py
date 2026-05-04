@@ -2,8 +2,10 @@
 SLA Dashboard - Streamlit Web App
 """
 import json
+import os
 import re
 import sys
+import requests
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -11,12 +13,24 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, date
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import JIRA_FIELDS
 from jira_client import JiraClient
 from sla_checker import SLAChecker
 from sla_calculator import SLASummary, SLAResult, get_business_days, get_business_days_elapsed
+
+# Credentials from environment variables (set all three to skip the sidebar form)
+_ENV_URL    = os.environ.get("JIRA_BASE_URL", "").strip()
+_ENV_EMAIL  = os.environ.get("JIRA_EMAIL", "").strip()
+_ENV_TOKEN  = os.environ.get("JIRA_API_TOKEN", "").strip()
+_USING_ENV  = bool(_ENV_URL and _ENV_EMAIL and _ENV_TOKEN)
 
 CONFIG_FILE = Path(__file__).parent / ".config.json"
 
@@ -622,16 +636,22 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Jira Credentials")
 
-    jira_url = st.text_input(
-        "Jira URL",
-        value=saved.get("jira_base_url", "https://yourcompany.atlassian.net"),
-        placeholder="https://yourcompany.atlassian.net",
-    )
-    jira_email = st.text_input("Email", value=saved.get("jira_email", ""))
-    jira_token = st.text_input(
-        "API Token", type="password",
-        help="Get yours at https://id.atlassian.com/manage-profile/security/api-tokens",
-    )
+    if _USING_ENV:
+        st.success("Credentials loaded from environment variables.")
+        jira_url   = _ENV_URL
+        jira_email = _ENV_EMAIL
+        jira_token = _ENV_TOKEN
+    else:
+        jira_url = st.text_input(
+            "Jira URL",
+            value=saved.get("jira_base_url", "https://yourcompany.atlassian.net"),
+            placeholder="https://yourcompany.atlassian.net",
+        )
+        jira_email = st.text_input("Email", value=saved.get("jira_email", ""))
+        jira_token = st.text_input(
+            "API Token", type="password",
+            help="Get yours at https://id.atlassian.com/manage-profile/security/api-tokens",
+        )
 
     st.markdown("---")
     st.markdown("### Date Range *(optional)*")
@@ -678,12 +698,30 @@ if run_btn:
         st.error("Please fill in all three Jira credential fields in the sidebar.")
         st.stop()
 
-    save_config({"jira_base_url": jira_url, "jira_email": jira_email})
+    if not _USING_ENV:
+        save_config({"jira_base_url": jira_url, "jira_email": jira_email})
 
     with st.spinner("Connecting to Jira..."):
         try:
             client = JiraClient(base_url=jira_url, email=jira_email, token=jira_token)
             user_info = client.test_connection()
+        except requests.exceptions.ConnectionError:
+            st.error(
+                f"Cannot reach Jira at '{jira_url}'. "
+                "Check your Jira URL and network connection."
+            )
+            st.stop()
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code
+            if status == 401:
+                st.error("Authentication failed (HTTP 401). Check your email address and API token.")
+            elif status == 403:
+                st.error("Access denied (HTTP 403). Your account may not have permission to access this Jira instance.")
+            elif status == 404:
+                st.error(f"Jira URL not found (HTTP 404). Verify that '{jira_url}' is correct.")
+            else:
+                st.error(f"Jira returned HTTP {status}: {e}")
+            st.stop()
         except Exception as e:
             st.error(f"Connection failed: {e}")
             st.stop()

@@ -250,9 +250,18 @@ Three keys are persisted across reruns (e.g. when a user checks a checkbox):
 | `run_logs` | `list` | All log entries collected during the last run — displayed in the Log tab |
 | `run_meta` | `dict` | Connected user, Jira URL, and date range from the last run |
 
+#### Credential Loading
+
+The app checks for credentials in this order:
+
+1. **Environment variables** — if `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` are all set (or present in a `.env` file loaded by `python-dotenv`), the sidebar form is hidden and a green confirmation banner is shown instead. The `.config.json` file is not written in this path.
+2. **Sidebar form** — if any environment variable is missing, the user fills in the three fields manually.
+
+Module-level constants `_ENV_URL`, `_ENV_EMAIL`, `_ENV_TOKEN`, and `_USING_ENV` are evaluated once on startup and control which path is taken.
+
 #### Configuration Persistence
 
-`load_config()` and `save_config()` read/write a `.config.json` file in the same directory. This saves the Jira URL and email (but never the API token) so the fields are pre-filled on the next visit. The API token is always re-entered each session.
+`load_config()` and `save_config()` read/write a `.config.json` file in the same directory. This saves the Jira URL and email (but never the API token) so the fields are pre-filled on the next visit. This file is only written when credentials come from the sidebar form — not when environment variables are in use.
 
 #### Key Functions
 
@@ -297,7 +306,7 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 
 #### Sidebar
 
-- Jira URL, email, and API token fields
+- Credential section: either a green "Credentials loaded from environment variables" banner (when env vars are set) or Jira URL, email, and API token form fields
 - Optional start/end date filter
 - Excluded Tickets list with a Clear All button
 - Run SLA Checks button
@@ -305,8 +314,8 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 
 #### Run Flow
 
-1. User fills in credentials and clicks **Run SLA Checks**
-2. `JiraClient` is initialized and `test_connection()` is called
+1. User clicks **Run SLA Checks** (credentials come from env vars or the sidebar form)
+2. `JiraClient` is initialized and `test_connection()` is called; specific HTTP error messages are shown for 401, 403, 404, and network failures
 3. A `log_collector` list is created and passed to `SLAChecker` (verbose mode is always on)
 4. Before each SLA check, a `section` marker entry is appended to `log_collector` (e.g. `"SLA 1 — Time to First Response"`) — used by the Log tab to group entries by SLA
 5. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
@@ -354,18 +363,34 @@ Styled single-line output helpers used throughout `main.py`.
 
 ### `main.py`
 
-CLI entry point. Prompts the user for credentials interactively, runs all four SLA checks, and prints results to the terminal using `display.py`.
+CLI entry point. Resolves Jira credentials, connects, runs all four SLA checks, and prints results to the terminal using `display.py`.
 
 #### Flow
 
 1. Parses `--verbose` flag
-2. Loads saved config (Jira URL and email) from `.config.json`
-3. Prompts for credentials — offers to reuse saved values
-4. Tests the Jira connection
-5. Saves config (URL and email, not token)
+2. Calls `get_env_credentials()` — returns a dict if all three env vars are set, otherwise `None`
+3. If env vars are present: prints a confirmation and uses them directly, skipping all prompts and config file reads
+4. If env vars are absent: loads `.config.json`, prompts for credentials (offering to reuse saved values), saves URL and email (not token) back to `.config.json`
+5. Calls `connect_to_jira()`, which tests the connection and exits with a specific error message on failure (401, 403, 404, or network error)
 6. Prompts for optional date range
 7. Calls `run_sla_checks()` which runs all four SLA checks and displays each dashboard in sequence
 8. If SLA 4 returns no results, falls back to `display_fix_version_tickets()`
+
+#### `get_env_credentials()`
+
+Reads `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` from the environment (after `python-dotenv` has loaded any `.env` file). Returns a credentials dict if all three are non-empty, otherwise `None`.
+
+#### `connect_to_jira(creds)`
+
+Creates a `JiraClient` and calls `test_connection()`. On failure, maps exception types to actionable error messages and exits:
+
+| Exception | Message shown |
+|---|---|
+| `ConnectionError` | Cannot reach Jira — check URL and network |
+| `HTTPError 401` | Authentication failed — check email and token |
+| `HTTPError 403` | Access denied — check account permissions |
+| `HTTPError 404` | URL not found — check `JIRA_BASE_URL` |
+| Other | Raw exception message |
 
 Run with `--verbose` (`-v`) to see JQL queries, field values, and per-ticket processing steps.
 
@@ -381,6 +406,7 @@ Run with `--verbose` (`-v`) to see JQL queries, field values, and per-ticket pro
 | `streamlit` | Web UI framework |
 | `plotly` | Interactive charts (bar, gauge, donut, stacked bar) |
 | `pandas` | DataFrame construction for `st.data_editor` tables |
+| `python-dotenv` | Loads a `.env` file into environment variables on startup |
 
 ---
 
@@ -422,5 +448,6 @@ Jira API
 4. Confirm `SOURCE_OF_ID_FIELD_ID` and `CONFIG_DONE_DATE_FIELD_ID` match your Jira
 5. Confirm `PROJECT_A`, `PROJECT_B`, `PROJECT_C` match your Jira project keys
 6. Confirm `health_plan_value` in `SLA_DEFINITIONS` matches the exact label used in your Jira ("LA Blue")
-7. Run `pip install -r requirements.txt`
-8. Launch: `streamlit run sla-app/streamlit_app.py` (web) or `python sla-app/main.py` (CLI)
+7. Create `sla-app/.env` with your Jira credentials (see README for format), or be ready to enter them interactively
+8. Run `pip install -r requirements.txt`
+9. Launch: `streamlit run sla-app/streamlit_app.py` (web) or `python sla-app/main.py` (CLI)
