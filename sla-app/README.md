@@ -42,9 +42,9 @@ Set three environment variables and the app will use them automatically — no p
 
 | Variable | Description |
 |---|---|
-| `JIRA_BASE_URL` | Your Jira instance URL, e.g. `https://yourcompany.atlassian.net` |
-| `JIRA_EMAIL` | The email address you use to log in to Jira |
-| `JIRA_API_TOKEN` | Your Jira API token (see below) |
+| `JIRA_BASE_URL` | Your Jira instance URL, e.g. `https://yourcompany.atlassian.net` — the app automatically resolves this to the Atlassian API gateway |
+| `JIRA_EMAIL` | The email address associated with the account or service account |
+| `JIRA_API_TOKEN` | Your API token — personal token or scoped service account token |
 
 The easiest way is a `.env` file in the `sla-app/` directory:
 

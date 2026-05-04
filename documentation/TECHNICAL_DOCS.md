@@ -78,11 +78,23 @@ A convenience dictionary that maps human-readable names to the field ID constant
 
 ### `jira_client.py`
 
-Low-level HTTP client for the Jira REST API (v3). Handles authentication, pagination, and rate limiting. Does not contain any SLA logic.
+Low-level HTTP client for the Jira REST API (v3). Handles authentication, URL resolution, pagination, and rate limiting. Does not contain any SLA logic.
 
-#### `JiraClient(base_url, email, token)`
+#### `JiraClient(base_url, email, token, use_gateway=True)`
 
-Initialized with Jira credentials. Constructs a Basic Auth header from the email and API token. Raises `ValueError` if any credential is missing.
+Initialized with Jira credentials. On construction it:
+
+1. Fetches `{base_url}/_edge/tenant_info` (no auth required) to retrieve the Atlassian cloud ID
+2. Rewrites `base_url` to `https://api.atlassian.com/ex/jira/{cloudId}` — the Atlassian API gateway required for scoped service account tokens
+3. Constructs a Basic Auth header from `email:token`
+
+Set `use_gateway=False` to skip the cloud ID lookup and use the instance URL directly (useful if you are already passing a gateway URL).
+
+Raises `ValueError` if `base_url`, `email`, or `token` are missing.
+
+#### `_resolve_base_url(instance_url, token)`
+
+Module-level helper called during `__init__`. Hits `/_edge/tenant_info`, extracts the `cloudId`, and returns the gateway URL. If the lookup fails for any reason (network error, unexpected response), it logs a warning and returns the original instance URL unchanged so the app can still attempt a connection.
 
 #### Key Methods
 

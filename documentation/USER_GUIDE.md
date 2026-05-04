@@ -47,6 +47,10 @@ Your Jira URL and email are saved automatically after the first run so you don't
 2. Click **Create API token**, give it a name, and copy it
 3. Paste it into the API Token field in the sidebar (or set it as `JIRA_API_TOKEN`)
 
+### How the app connects to Jira
+
+When you provide a Jira URL (e.g. `https://yourcompany.atlassian.net`), the app automatically looks up your Atlassian **cloud ID** and routes all API calls through the Atlassian API gateway (`api.atlassian.com`). This is required for scoped service account tokens. You always provide your normal company URL — the gateway translation happens invisibly in the background.
+
 ### Connection Errors
 
 If the app cannot connect to Jira, it will display a specific error message:
