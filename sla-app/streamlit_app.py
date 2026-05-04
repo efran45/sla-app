@@ -64,15 +64,18 @@ from jira_client import JiraClient
 from sla_checker import SLAChecker
 from sla_calculator import SLASummary, SLAResult, get_business_days, get_business_days_elapsed
 
-# Credentials from environment variables (set all three to skip the sidebar form)
+# Credentials from environment variables.
+# JIRA_EMAIL is optional — omit it to use Bearer token auth (service account scoped tokens).
+# JIRA_BASE_URL and JIRA_API_TOKEN are required to skip the sidebar form.
 _ENV_URL    = os.environ.get("JIRA_BASE_URL", "").strip()
 _ENV_EMAIL  = os.environ.get("JIRA_EMAIL", "").strip()
 _ENV_TOKEN  = os.environ.get("JIRA_API_TOKEN", "").strip()
-_USING_ENV  = bool(_ENV_URL and _ENV_EMAIL and _ENV_TOKEN)
+_USING_ENV  = bool(_ENV_URL and _ENV_TOKEN)
 
 _log.info("JIRA_BASE_URL set: %s", bool(_ENV_URL))
-_log.info("JIRA_EMAIL set: %s", bool(_ENV_EMAIL))
+_log.info("JIRA_EMAIL set: %s (omit for Bearer/service-account auth)", bool(_ENV_EMAIL))
 _log.info("JIRA_API_TOKEN set: %s", bool(_ENV_TOKEN))
+_log.info("Auth mode: %s", "Bearer (service account)" if _ENV_URL and _ENV_TOKEN and not _ENV_EMAIL else "Basic Auth (user account)" if _USING_ENV else "not set")
 _log.info("Using environment credentials: %s", _USING_ENV)
 
 CONFIG_FILE = Path(__file__).parent / ".config.json"
@@ -690,10 +693,14 @@ with st.sidebar:
             value=saved.get("jira_base_url", "https://yourcompany.atlassian.net"),
             placeholder="https://yourcompany.atlassian.net",
         )
-        jira_email = st.text_input("Email", value=saved.get("jira_email", ""))
+        jira_email = st.text_input(
+            "Email *(optional for service accounts)*",
+            value=saved.get("jira_email", ""),
+            help="Required for personal API tokens. Leave blank for service account scoped tokens (uses Bearer auth).",
+        )
         jira_token = st.text_input(
             "API Token", type="password",
-            help="Get yours at https://id.atlassian.com/manage-profile/security/api-tokens",
+            help="Personal API token: https://id.atlassian.com/manage-profile/security/api-tokens",
         )
 
     st.markdown("---")
@@ -737,8 +744,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if run_btn:
-    if not jira_url or not jira_email or not jira_token:
-        st.error("Please fill in all three Jira credential fields in the sidebar.")
+    if not jira_url or not jira_token:
+        st.error("Jira URL and API Token are required. Email is only needed for personal API tokens (not service account tokens).")
         st.stop()
 
     if not _USING_ENV:
