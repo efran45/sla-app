@@ -17,13 +17,42 @@ from datetime import datetime, date
 logging.basicConfig(level=logging.INFO, format="[SLA] %(levelname)s %(message)s")
 _log = logging.getLogger(__name__)
 
-_env_file = Path(__file__).parent / ".env"
-_log.info("Looking for .env at: %s", _env_file)
-_log.info(".env file found: %s", _env_file.exists())
+_REQUIRED_KEYS = {"JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"}
+
+def _validate_env_file(env_path: Path):
+    _log.info("Looking for .env at: %s", env_path)
+    if not env_path.exists():
+        _log.warning(".env file not found — will use interactive form or existing env vars")
+        return
+    _log.info(".env file found")
+    for i, raw in enumerate(env_path.read_text().splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            _log.warning(".env line %d has no '=' sign: %r", i, line)
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if key not in _REQUIRED_KEYS:
+            _log.info(".env line %d: unrecognised key %r (ignored)", i, key)
+            continue
+        if val and val[0] in ('"', "'") and val[-1] == val[0]:
+            _log.warning(
+                ".env line %d: value for %s is wrapped in quotes — remove them. "
+                "Correct format: %s=yourvalue", i, key, key
+            )
+        elif not val:
+            _log.warning(".env line %d: %s has no value", i, key)
+        else:
+            _log.info(".env line %d: %s looks OK (length %d)", i, key, len(val))
+
+_validate_env_file(Path(__file__).parent / ".env")
 
 try:
     from dotenv import load_dotenv
-    loaded = load_dotenv(_env_file)
+    loaded = load_dotenv(Path(__file__).parent / ".env")
     _log.info("dotenv load_dotenv returned: %s", loaded)
 except ImportError:
     _log.warning("python-dotenv is not installed — .env file will not be loaded")
