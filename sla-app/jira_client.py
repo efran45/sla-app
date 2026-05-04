@@ -1,23 +1,57 @@
 """
 Jira API Client for Healthcare SLA CLI
 """
+import logging
 import time
 import requests
 from base64 import b64encode
 from datetime import datetime
 from typing import Optional
 
+_log = logging.getLogger(__name__)
+
+
+def _resolve_base_url(instance_url: str, token: str) -> str:
+    """
+    Scoped service account tokens must use the Atlassian API gateway
+    (api.atlassian.com/ex/jira/{cloudId}) rather than the instance URL
+    (yourcompany.atlassian.net). This fetches the cloud ID from the
+    instance's public tenant_info endpoint and returns the gateway URL.
+    Falls back to the original URL if the lookup fails.
+    """
+    instance_url = instance_url.rstrip('/')
+    try:
+        resp = requests.get(f"{instance_url}/_edge/tenant_info", timeout=10)
+        resp.raise_for_status()
+        cloud_id = resp.json().get("cloudId")
+        if cloud_id:
+            gateway = f"https://api.atlassian.com/ex/jira/{cloud_id}"
+            _log.info("Resolved cloud ID: %s → using gateway URL: %s", cloud_id, gateway)
+            return gateway
+    except Exception as e:
+        _log.warning("Could not resolve cloud ID from %s: %s — using instance URL", instance_url, e)
+    return instance_url
+
 
 class JiraClient:
-    def __init__(self, base_url: str, email: str, token: str):
-        self.base_url = base_url.rstrip('/') if base_url else None
-        self.email = email
-        self.token = token
-
-        if not all([self.base_url, self.email, self.token]):
+    def __init__(self, base_url: str, email: str, token: str, use_gateway: bool = True):
+        """
+        Args:
+            base_url:    Your Jira instance URL (e.g. https://yourcompany.atlassian.net).
+            email:       The email address associated with the account or service account.
+            token:       API token (personal or scoped service account token).
+            use_gateway: If True (default), automatically resolve the Atlassian API gateway
+                         URL using the cloud ID. Set to False to use the instance URL directly.
+        """
+        if not all([base_url, email, token]):
             raise ValueError(
                 "Missing Jira credentials. JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN are all required."
             )
+
+        self.email = email
+        self.token = token
+        self.instance_url = base_url.rstrip('/')
+        self.base_url = _resolve_base_url(self.instance_url, token) if use_gateway else self.instance_url
 
         auth_string = f"{self.email}:{self.token}"
         auth_bytes = b64encode(auth_string.encode()).decode()
