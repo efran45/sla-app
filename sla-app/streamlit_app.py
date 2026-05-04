@@ -427,12 +427,13 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
     rows = []
     fmt = "%b %d, %Y"
     excluded = st.session_state.get("excluded_keys", set())
+    pending  = st.session_state.get("pending_exclusions", set())
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
         created  = r.created_date.strftime(fmt) if r.created_date  else "—"
         resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
         key = r.source_ticket or ""
-        is_excluded = key.upper() in excluded
+        is_excluded = key.upper() in excluded or key.upper() in pending
 
         if sla_num == 1:
             rows.append({
@@ -621,7 +622,7 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
             "_key": None,
             "Exclude": st.column_config.CheckboxColumn(
                 "Excl.",
-                help="Check to exclude this ticket on the next run",
+                help="Check tickets to exclude, then click Recalculate in the sidebar",
                 default=False,
                 width="small",
             ),
@@ -641,9 +642,9 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
             if not k:
                 continue
             if row.get("Exclude", False):
-                st.session_state.excluded_keys.add(k)
+                st.session_state.pending_exclusions.add(k)
             else:
-                st.session_state.excluded_keys.discard(k)
+                st.session_state.pending_exclusions.discard(k)
         return True
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
@@ -666,6 +667,8 @@ def display_sla_section(summary: SLASummary, sla_num: int, title: str, caption: 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "excluded_keys" not in st.session_state:
     st.session_state.excluded_keys = set()
+if "pending_exclusions" not in st.session_state:
+    st.session_state.pending_exclusions = set()
 if "lpm_overrides" not in st.session_state:
     st.session_state.lpm_overrides = {}
 if "sla_sort" not in st.session_state:
@@ -684,16 +687,30 @@ with st.sidebar:
     date_to   = st.date_input("End date",   value=None)
 
     st.markdown("---")
-    excl = st.session_state.excluded_keys
-    excl_count = len(excl)
-    st.markdown(f"### Excluded Tickets ({excl_count})")
+    pending = st.session_state.pending_exclusions
+    excl    = st.session_state.excluded_keys
+    pending_count = len(pending)
+    excl_count    = len(excl)
+
+    st.markdown("### Ticket Exclusions")
+    if pending_count:
+        st.caption(f"**{pending_count} pending:** {', '.join(sorted(pending))}")
     if excl_count:
-        st.caption(", ".join(sorted(excl)))
+        st.caption(f"**{excl_count} applied:** {', '.join(sorted(excl))}")
+    if not pending_count and not excl_count:
+        st.caption("Check the **Excl.** box on any ticket row, then click **Recalculate**.")
+
+    recalc_btn = st.button(
+        f"🔄 Recalculate ({pending_count} pending)" if pending_count else "🔄 Recalculate",
+        type="primary" if pending_count else "secondary",
+        use_container_width=True,
+        disabled=not bool("sla_summaries" in st.session_state),
+    )
+    if excl_count:
         if st.button("Clear All Exclusions", use_container_width=True):
             st.session_state.excluded_keys = set()
+            st.session_state.pending_exclusions = set()
             st.rerun()
-    else:
-        st.caption("Check the **Excl.** box on any ticket row to exclude it from the next run.")
 
     st.markdown("---")
     run_btn = st.button("▶ Run SLA Checks", type="primary", use_container_width=True)
@@ -798,7 +815,11 @@ if run_btn:
     progress_bar.progress(100, text="Done!")
     progress_bar.empty()
 
-    # Apply any accumulated exclusions
+    # Store raw unfiltered results so recalculate can re-filter without re-querying Jira
+    import copy
+    st.session_state.raw_summaries = copy.deepcopy(summaries)
+
+    # Apply any already-confirmed exclusions for initial display
     excl = st.session_state.excluded_keys
     if excl:
         for s in summaries:
@@ -815,6 +836,7 @@ if run_btn:
     if summaries[3] is not None and summaries[3].total_count == 0:
         fix_version_data = checker.get_recent_fix_version_lpm_tickets()
 
+    st.session_state.pending_exclusions = set()
     st.session_state.sla_summaries     = summaries
     st.session_state.sla_errors        = errors
     st.session_state.fix_version_data  = fix_version_data
@@ -825,6 +847,24 @@ if run_btn:
         "date_from_str": date_from_str,
         "date_to_str": date_to_str,
     }
+
+if recalc_btn and "raw_summaries" in st.session_state:
+    st.session_state.excluded_keys |= st.session_state.pending_exclusions
+    st.session_state.pending_exclusions = set()
+    excl = st.session_state.excluded_keys
+    import copy
+    summaries = copy.deepcopy(st.session_state.raw_summaries)
+    if excl:
+        for s in summaries:
+            if s:
+                s.results = [
+                    r for r in s.results
+                    if (r.source_ticket or "").upper() not in excl
+                    and (r.target_ticket or "").upper() not in excl
+                    and (r.lpm_category or "").upper() not in excl
+                ]
+    st.session_state.sla_summaries = summaries
+    st.rerun()
 
 # Show placeholder if no data yet
 if "sla_summaries" not in st.session_state:

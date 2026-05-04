@@ -129,7 +129,16 @@ The sort applies to both the chart and the table.
 
 ### Excluding a Ticket
 
-If a ticket should not be counted (e.g. it was created in error or is a known exception), check the **Excl.** checkbox on its row in the table. The ticket will be excluded from the next run. The sidebar shows all currently excluded tickets and has a **Clear All Exclusions** button.
+If a ticket should not be counted (e.g. it was created in error or is a known exception):
+
+1. Check the **Excl.** checkbox on any row — you can check as many as you like across all tabs and SLA sections without the page recalculating
+2. When you are done selecting, click **🔄 Recalculate** in the sidebar
+
+The sidebar's **Ticket Exclusions** section shows:
+- **Pending** — tickets you have checked but not yet applied
+- **Applied** — tickets that have already been excluded from the current results
+
+Clicking **Recalculate** moves all pending tickets into the applied set and immediately re-filters the results — no need to re-run the Jira checks. The **Clear All Exclusions** button removes all applied exclusions and resets the display.
 
 ### Overriding the Linked LPM Ticket (SLAs 2 and 3)
 

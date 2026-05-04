@@ -253,10 +253,12 @@ Three keys are persisted across reruns (e.g. when a user checks a checkbox):
 
 | Key | Type | Purpose |
 |---|---|---|
-| `excluded_keys` | `set[str]` | Ticket keys to exclude from results on the next run |
+| `excluded_keys` | `set[str]` | Applied ticket exclusions — these are filtered out of displayed results |
+| `pending_exclusions` | `set[str]` | Checkboxes the user has ticked but not yet confirmed via Recalculate |
 | `lpm_overrides` | `dict[str, str]` | Maps ACS ticket key → user-selected LPM ticket key (overrides auto-selection) |
 | `sla_sort` | `dict[int, str]` | Maps SLA number → current sort selection |
-| `sla_summaries` | `list` | Cached `SLASummary` results from the last run |
+| `raw_summaries` | `list` | Unfiltered `SLASummary` results from the last Jira run — source of truth for recalculate |
+| `sla_summaries` | `list` | `raw_summaries` with `excluded_keys` filtered out — what is currently displayed |
 | `sla_errors` | `list` | Error strings from the last run, one per SLA |
 | `fix_version_data` | `list \| None` | SLA 4 fallback data if no SR sub-tasks found |
 | `run_logs` | `list` | All log entries collected during the last run — displayed in the Log tab |
@@ -331,10 +333,20 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 3. A `log_collector` list is created and passed to `SLAChecker` (verbose mode is always on)
 4. Before each SLA check, a `section` marker entry is appended to `log_collector` (e.g. `"SLA 1 — Time to First Response"`) — used by the Log tab to group entries by SLA
 5. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
-6. Excluded tickets are filtered out of results
-7. If SLA 4 is empty, fix-version fallback data is pre-fetched
-8. All results, errors, and the log are stored in `st.session_state`
-9. The page renders two top-level tabs — **📊 Dashboard** and **📋 Log** — from session state; subsequent checkbox/sort interactions do not re-query Jira
+6. Raw unfiltered results are deep-copied into `raw_summaries`
+7. Any already-confirmed `excluded_keys` are filtered out to produce the initial `sla_summaries`; `pending_exclusions` is cleared
+8. If SLA 4 is empty, fix-version fallback data is pre-fetched
+9. All results, errors, and the log are stored in `st.session_state`
+10. The page renders two top-level tabs — **📊 Dashboard** and **📋 Log** — from session state; subsequent checkbox/sort/recalculate interactions do not re-query Jira
+
+#### Recalculate Flow
+
+When the user checks **Excl.** checkboxes, the keys are written to `pending_exclusions` only — `excluded_keys` and `sla_summaries` are not touched, so the page does not refilter on every click. When the user clicks **🔄 Recalculate**:
+
+1. `pending_exclusions` is merged into `excluded_keys`
+2. `pending_exclusions` is cleared
+3. `raw_summaries` is deep-copied and filtered by the updated `excluded_keys` to produce new `sla_summaries`
+4. `st.rerun()` re-renders the dashboard from the updated session state — no Jira API calls are made
 
 #### Log Tab
 
