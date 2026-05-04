@@ -7,6 +7,7 @@ For debug output: python main.py --verbose
 """
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -16,11 +17,19 @@ from datetime import datetime
 from rich.prompt import Prompt, Confirm
 from rich.console import Console
 
+logging.basicConfig(level=logging.INFO, format="[SLA] %(levelname)s %(message)s")
+_log = logging.getLogger(__name__)
+
+_env_file = Path(__file__).parent / ".env"
+_log.info("Looking for .env at: %s", _env_file)
+_log.info(".env file found: %s", _env_file.exists())
+
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
+    loaded = load_dotenv(_env_file)
+    _log.info("dotenv load_dotenv returned: %s", loaded)
 except ImportError:
-    pass
+    _log.warning("python-dotenv is not installed — .env file will not be loaded")
 
 from config import JIRA_FIELDS
 from jira_client import JiraClient
@@ -42,8 +51,13 @@ def get_env_credentials() -> dict | None:
     base_url = os.environ.get("JIRA_BASE_URL", "").strip()
     email    = os.environ.get("JIRA_EMAIL", "").strip()
     token    = os.environ.get("JIRA_API_TOKEN", "").strip()
+    _log.info("JIRA_BASE_URL set: %s", bool(base_url))
+    _log.info("JIRA_EMAIL set: %s", bool(email))
+    _log.info("JIRA_API_TOKEN set: %s", bool(token))
     if base_url and email and token:
+        _log.info("All env credentials found — skipping interactive prompt")
         return {"base_url": base_url, "email": email, "token": token}
+    _log.info("Env credentials incomplete — falling back to interactive prompt")
     return None
 
 
@@ -101,6 +115,8 @@ def prompt_for_credentials(config: dict) -> dict:
 
 def connect_to_jira(creds: dict):
     """Create a JiraClient, test the connection, and return (client, user_info). Exits on failure."""
+    _log.info("Attempting connection to: %s", creds["base_url"])
+    _log.info("Connecting as: %s", creds["email"])
     try:
         client = JiraClient(
             base_url=creds["base_url"],
@@ -108,6 +124,7 @@ def connect_to_jira(creds: dict):
             token=creds["token"],
         )
         user_info = client.test_connection()
+        _log.info("Connection successful — logged in as: %s", user_info.get("displayName"))
         return client, user_info
     except requests.exceptions.ConnectionError:
         display_error(

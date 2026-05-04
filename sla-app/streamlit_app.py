@@ -2,6 +2,7 @@
 SLA Dashboard - Streamlit Web App
 """
 import json
+import logging
 import os
 import re
 import sys
@@ -13,11 +14,19 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, date
 
+logging.basicConfig(level=logging.INFO, format="[SLA] %(levelname)s %(message)s")
+_log = logging.getLogger(__name__)
+
+_env_file = Path(__file__).parent / ".env"
+_log.info("Looking for .env at: %s", _env_file)
+_log.info(".env file found: %s", _env_file.exists())
+
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
+    loaded = load_dotenv(_env_file)
+    _log.info("dotenv load_dotenv returned: %s", loaded)
 except ImportError:
-    pass
+    _log.warning("python-dotenv is not installed — .env file will not be loaded")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -31,6 +40,11 @@ _ENV_URL    = os.environ.get("JIRA_BASE_URL", "").strip()
 _ENV_EMAIL  = os.environ.get("JIRA_EMAIL", "").strip()
 _ENV_TOKEN  = os.environ.get("JIRA_API_TOKEN", "").strip()
 _USING_ENV  = bool(_ENV_URL and _ENV_EMAIL and _ENV_TOKEN)
+
+_log.info("JIRA_BASE_URL set: %s", bool(_ENV_URL))
+_log.info("JIRA_EMAIL set: %s", bool(_ENV_EMAIL))
+_log.info("JIRA_API_TOKEN set: %s", bool(_ENV_TOKEN))
+_log.info("Using environment credentials: %s", _USING_ENV)
 
 CONFIG_FILE = Path(__file__).parent / ".config.json"
 
