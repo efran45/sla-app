@@ -14,22 +14,15 @@ class JiraClient:
         self.email = email
         self.token = token
 
-        if not self.base_url or not self.token:
+        if not all([self.base_url, self.email, self.token]):
             raise ValueError(
-                "Missing Jira credentials. JIRA_BASE_URL and JIRA_API_TOKEN are required."
+                "Missing Jira credentials. JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN are all required."
             )
 
-        # Service account scoped tokens use Bearer auth (no email needed).
-        # Regular user API tokens use Basic Auth (email:token).
-        if self.email:
-            auth_string = f"{self.email}:{self.token}"
-            auth_bytes = b64encode(auth_string.encode()).decode()
-            auth_header = f"Basic {auth_bytes}"
-        else:
-            auth_header = f"Bearer {self.token}"
-
+        auth_string = f"{self.email}:{self.token}"
+        auth_bytes = b64encode(auth_string.encode()).decode()
         self.headers = {
-            "Authorization": auth_header,
+            "Authorization": f"Basic {auth_bytes}",
             "Accept": "application/json",
             "Content-Type": "application/json",
         }

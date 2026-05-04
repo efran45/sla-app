@@ -76,20 +76,15 @@ CONFIG_FILE = Path(__file__).parent / ".config.json"
 
 
 def get_env_credentials() -> dict | None:
-    """Return credentials from environment variables, or None if the minimum set is missing.
-
-    JIRA_EMAIL is optional — omit it to use Bearer token auth (service account scoped tokens).
-    JIRA_BASE_URL and JIRA_API_TOKEN are always required.
-    """
+    """Return credentials from environment variables, or None if any are missing."""
     base_url = os.environ.get("JIRA_BASE_URL", "").strip()
     email    = os.environ.get("JIRA_EMAIL", "").strip()
     token    = os.environ.get("JIRA_API_TOKEN", "").strip()
     _log.info("JIRA_BASE_URL set: %s", bool(base_url))
-    _log.info("JIRA_EMAIL set: %s (omit for Bearer/service-account auth)", bool(email))
+    _log.info("JIRA_EMAIL set: %s", bool(email))
     _log.info("JIRA_API_TOKEN set: %s", bool(token))
-    if base_url and token:
-        mode = "Bearer (service account)" if not email else "Basic Auth (user account)"
-        _log.info("Env credentials found — auth mode: %s", mode)
+    if base_url and email and token:
+        _log.info("All env credentials found — skipping interactive prompt")
         return {"base_url": base_url, "email": email, "token": token}
     _log.info("Env credentials incomplete — falling back to interactive prompt")
     return None
