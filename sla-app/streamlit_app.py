@@ -427,13 +427,12 @@ def styled_df(results: list[SLAResult], sla_num: int = 1, jira_url: str = "") ->
     rows = []
     fmt = "%b %d, %Y"
     excluded = st.session_state.get("excluded_keys", set())
-    pending  = st.session_state.get("pending_exclusions", set())
     for r in results:
         status_icon = {"met": "✅ Met", "breached": "🔴 Breached", "in_progress": "🟡 In Progress"}.get(r.status, r.status)
         created  = r.created_date.strftime(fmt) if r.created_date  else "—"
         resolved = r.resolved_date.strftime(fmt) if r.resolved_date else "—"
         key = r.source_ticket or ""
-        is_excluded = key.upper() in excluded or key.upper() in pending
+        is_excluded = key.upper() in excluded
 
         if sla_num == 1:
             rows.append({
@@ -710,6 +709,9 @@ with st.sidebar:
         if st.button("Clear All Exclusions", use_container_width=True):
             st.session_state.excluded_keys = set()
             st.session_state.pending_exclusions = set()
+            for sla_n in (1, 2, 3, 4):
+                for tab_k in ("b", "p", "m"):
+                    st.session_state.pop(f"tbl_{sla_n}_{tab_k}", None)
             st.rerun()
 
     st.markdown("---")
@@ -770,50 +772,113 @@ if run_btn:
     date_to_str   = date_to.strftime("%Y-%m-%d")   if date_to   else None
 
     log_collector = []
-    checker = SLAChecker(client, verbose=True, log_collector=log_collector, date_from=date_from_str, date_to=date_to_str)
-    checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
-    checker.set_field_id("category",    JIRA_FIELDS["category"])
 
     summaries = [None, None, None, None]
     errors    = [None, None, None, None]
 
-    progress_bar = st.progress(0, text="Fetching SLA data from Jira...")
+    # ── Live progress UI ──────────────────────────────────────────────────────
+    progress_bar  = st.progress(0)
+    status_line   = st.empty()   # "SLA N of 4 — Name"
+    ticket_line   = st.empty()   # "Ticket N of M — ACS-123"
+    tally_line    = st.empty()   # "✅ 4 met  🔴 2 breached  🟡 8 in progress"
+
+    # Per-SLA: overall progress occupies 25 points each (0→25, 25→50, 50→75, 75→100)
+    _SLA_NAMES = {
+        1: "Time to First Response",
+        2: "Identification of Resolution",
+        3: "Resolution of Config Issues",
+        4: "Impact Report Delivery",
+    }
+
+    def _make_callback(sla_num: int, pct_start: int, running_summary: list):
+        """Returns a progress callback for one SLA check."""
+        def _cb(current: int, total: int, ticket_key: str):
+            frac  = current / total if total else 1.0
+            pct   = min(pct_start + int(frac * 25), pct_start + 24)
+            label = _SLA_NAMES[sla_num]
+            progress_bar.progress(pct)
+            status_line.markdown(
+                f"**SLA {sla_num} of 4 — {label}**"
+            )
+            ticket_line.markdown(
+                f"Checking ticket **{current}** of **{total}**"
+                + (f" &nbsp;·&nbsp; `{ticket_key}`" if ticket_key else "")
+            )
+            s = running_summary[0]
+            if s is not None:
+                tally_line.markdown(
+                    f"✅ {s.met_count} met &nbsp; 🔴 {s.breached_count} breached"
+                    f" &nbsp; 🟡 {s.in_progress_count} in progress so far"
+                )
+        return _cb
 
     def _section(msg):
         log_collector.append({"level": "section", "message": msg, "time": datetime.now().strftime("%H:%M:%S")})
 
-    with st.spinner("Checking SLA 1: Time to First Response..."):
-        try:
-            _section("SLA 1 — Time to First Response")
-            summaries[0] = checker.check_first_response()
-        except Exception as e:
-            errors[0] = str(e)
-    progress_bar.progress(25, text="SLA 1 done · Checking SLA 2...")
+    # SLA 1 ──────────────────────────────────────────────────────────────────
+    status_line.markdown("**SLA 1 of 4 — Time to First Response** &nbsp;· Fetching tickets…")
+    progress_bar.progress(0)
+    _s1 = [None]
+    checker = SLAChecker(
+        client, verbose=True, log_collector=log_collector,
+        date_from=date_from_str, date_to=date_to_str,
+        progress_callback=_make_callback(1, 0, _s1),
+    )
+    checker.set_field_id("health_plan", JIRA_FIELDS["health_plan"])
+    checker.set_field_id("category",    JIRA_FIELDS["category"])
+    try:
+        _section("SLA 1 — Time to First Response")
+        summaries[0] = checker.check_first_response()
+        _s1[0] = summaries[0]
+    except Exception as e:
+        errors[0] = str(e)
 
-    with st.spinner("Checking SLA 2: Identification of Resolution..."):
-        try:
-            _section("SLA 2 — Identification of Resolution")
-            summaries[1] = checker.check_identification_resolution_config()
-        except Exception as e:
-            errors[1] = str(e)
-    progress_bar.progress(50, text="SLA 2 done · Checking SLA 3...")
+    # SLA 2 ──────────────────────────────────────────────────────────────────
+    status_line.markdown("**SLA 2 of 4 — Identification of Resolution** &nbsp;· Fetching tickets…")
+    progress_bar.progress(25)
+    tally_line.empty()
+    _s2 = [None]
+    checker.progress_callback = _make_callback(2, 25, _s2)
+    try:
+        _section("SLA 2 — Identification of Resolution")
+        summaries[1] = checker.check_identification_resolution_config()
+        _s2[0] = summaries[1]
+    except Exception as e:
+        errors[1] = str(e)
 
-    with st.spinner("Checking SLA 3: Resolution of Config Issues..."):
-        try:
-            _section("SLA 3 — Resolution of Config Issues")
-            summaries[2] = checker.check_resolution_config()
-        except Exception as e:
-            errors[2] = str(e)
-    progress_bar.progress(75, text="SLA 3 done · Checking SLA 4...")
+    # SLA 3 ──────────────────────────────────────────────────────────────────
+    status_line.markdown("**SLA 3 of 4 — Resolution of Config Issues** &nbsp;· Fetching tickets…")
+    progress_bar.progress(50)
+    tally_line.empty()
+    _s3 = [None]
+    checker.progress_callback = _make_callback(3, 50, _s3)
+    try:
+        _section("SLA 3 — Resolution of Config Issues")
+        summaries[2] = checker.check_resolution_config()
+        _s3[0] = summaries[2]
+    except Exception as e:
+        errors[2] = str(e)
 
-    with st.spinner("Checking SLA 4: Impact Report Delivery..."):
-        try:
-            _section("SLA 4 — Impact Report Delivery")
-            summaries[3] = checker.check_impact_report_delivery()
-        except Exception as e:
-            errors[3] = str(e)
-    progress_bar.progress(100, text="Done!")
+    # SLA 4 ──────────────────────────────────────────────────────────────────
+    status_line.markdown("**SLA 4 of 4 — Impact Report Delivery** &nbsp;· Fetching tickets…")
+    progress_bar.progress(75)
+    tally_line.empty()
+    _s4 = [None]
+    checker.progress_callback = _make_callback(4, 75, _s4)
+    try:
+        _section("SLA 4 — Impact Report Delivery")
+        summaries[3] = checker.check_impact_report_delivery()
+        _s4[0] = summaries[3]
+    except Exception as e:
+        errors[3] = str(e)
+
+    # Done ───────────────────────────────────────────────────────────────────
+    progress_bar.progress(100)
+    status_line.markdown("✅ **All checks complete** — loading results…")
+    ticket_line.empty()
+    tally_line.empty()
     progress_bar.empty()
+    status_line.empty()
 
     # Store raw unfiltered results so recalculate can re-filter without re-querying Jira
     import copy
@@ -851,6 +916,11 @@ if run_btn:
 if recalc_btn and "raw_summaries" in st.session_state:
     st.session_state.excluded_keys |= st.session_state.pending_exclusions
     st.session_state.pending_exclusions = set()
+    # Clear data_editor widget states so stale row-index deltas don't bleed onto
+    # the newly-filtered tables (row indices shift when excluded rows are removed)
+    for sla_n in (1, 2, 3, 4):
+        for tab_k in ("b", "p", "m"):
+            st.session_state.pop(f"tbl_{sla_n}_{tab_k}", None)
     excl = st.session_state.excluded_keys
     import copy
     summaries = copy.deepcopy(st.session_state.raw_summaries)

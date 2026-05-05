@@ -182,11 +182,12 @@ A collection of `SLAResult` objects for one SLA run.
 
 The core business logic layer. Queries Jira via `JiraClient` and returns `SLASummary` objects. Contains one public method per SLA plus internal helpers.
 
-#### `SLAChecker(jira_client, verbose, date_from, date_to, log_collector)`
+#### `SLAChecker(jira_client, verbose, date_from, date_to, log_collector, progress_callback)`
 
 - `verbose`: if `True`, prints detailed JQL queries and per-ticket processing steps to the terminal
 - `date_from` / `date_to`: optional `YYYY-MM-DD` strings that restrict the ACS ticket query by creation date
 - `log_collector`: optional list; when provided, every `_log` call appends a dict `{"level", "message", "time"}` to this list in addition to (or instead of) printing to the terminal. Used by the Streamlit app to populate the Log tab.
+- `progress_callback`: optional callable `(current: int, total: int, ticket_key: str) -> None`; called once per ticket at the start of processing. The Streamlit app uses this to drive the live status display (current ticket, ticket N of M, running tally). After construction the callback can be swapped by reassigning `checker.progress_callback` between SLA checks.
 
 #### `_date_filter_jql()`
 
@@ -332,7 +333,7 @@ All charts are rendered as static (non-interactive) with `staticPlot: True`.
 2. `JiraClient` is initialized and `test_connection()` is called; specific HTTP error messages are shown for 401, 403, 404, and network failures
 3. A `log_collector` list is created and passed to `SLAChecker` (verbose mode is always on)
 4. Before each SLA check, a `section` marker entry is appended to `log_collector` (e.g. `"SLA 1 — Time to First Response"`) — used by the Log tab to group entries by SLA
-5. All four SLA checks run sequentially with a progress bar; every internal `_log` call appends to `log_collector`
+5. All four SLA checks run sequentially; a `progress_callback` is registered per SLA and drives a live status display: current SLA name, ticket N of M with the ticket key, a smooth per-ticket progress bar, and a running tally of met / breached / in-progress results; every internal `_log` call also appends to `log_collector`
 6. Raw unfiltered results are deep-copied into `raw_summaries`
 7. Any already-confirmed `excluded_keys` are filtered out to produce the initial `sla_summaries`; `pending_exclusions` is cleared
 8. If SLA 4 is empty, fix-version fallback data is pre-fetched

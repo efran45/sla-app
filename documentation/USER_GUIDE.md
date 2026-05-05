@@ -68,7 +68,13 @@ Below the credentials, you can set a **Start date** and/or **End date** to limit
 
 ### Running the Checks
 
-Click **▶ Run SLA Checks**. The dashboard will connect to Jira, run all four SLA checks in sequence, and display the results. A progress bar shows which SLA is currently being checked. This typically takes 30–90 seconds depending on how many tickets exist.
+Click **▶ Run SLA Checks**. The dashboard will connect to Jira, run all four SLA checks in sequence, and display the results. This typically takes 30–90 seconds depending on how many tickets exist.
+
+While the checks are running, a live status display shows:
+- Which SLA is active (e.g. **SLA 2 of 4 — Identification of Resolution**)
+- Which ticket is currently being evaluated and how many remain (e.g. **Checking ticket 7 of 23 · ACS-456**)
+- A running tally of results so far (✅ met, 🔴 breached, 🟡 in progress)
+- A progress bar that advances ticket-by-ticket within each SLA
 
 ---
 
@@ -215,7 +221,7 @@ The rate only includes resolved tickets (Met + Breached). In-progress tickets ar
 Each SLA pulls tickets independently from Jira using its own query. A ticket can appear in multiple SLA sections if it is relevant to more than one.
 
 **The run took a long time.**
-Each ticket requires one or more additional Jira API calls (to fetch comments, changelogs, or linked tickets). Runs with many tickets can take several minutes. The progress bar shows which SLA is currently being processed.
+Each ticket requires one or more additional Jira API calls (to fetch comments, changelogs, or linked tickets). Runs with many tickets can take several minutes. The live status display shows exactly which ticket is being processed so you can see that work is progressing.
 
 **I see errors in the Log tab.**
 Errors are usually temporary Jira API issues (rate limiting or network timeouts). The calculator retries automatically. If a ticket repeatedly errors, open its log group and copy the error message for your Jira administrator.

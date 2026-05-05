@@ -24,13 +24,19 @@ console = Console()
 class SLAChecker:
     """Checks SLA compliance by querying Jira."""
 
-    def __init__(self, jira_client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None, log_collector: list = None):
+    def __init__(self, jira_client: JiraClient, verbose: bool = False, date_from: str = None, date_to: str = None, log_collector: list = None, progress_callback=None):
         self.jira = jira_client
         self.field_ids = JIRA_FIELDS.copy()
         self.verbose = verbose
         self.date_from = date_from
         self.date_to = date_to
         self.log_collector = log_collector
+        self.progress_callback = progress_callback  # callable(current, total, ticket_key) or None
+
+    def _tick(self, current: int, total: int, ticket_key: str = ""):
+        """Report per-ticket progress to the registered callback, if any."""
+        if self.progress_callback:
+            self.progress_callback(current, total, ticket_key)
 
     def _log(self, message: str, style: str = "dim"):
         if self.verbose:
@@ -145,7 +151,8 @@ class SLAChecker:
 
         self._log(f"[Impact Report SLA] SR sub-tasks returned: {len(subtasks)}", "green")
 
-        for subtask in subtasks:
+        for idx, subtask in enumerate(subtasks):
+            self._tick(idx + 1, len(subtasks), subtask.get("key", ""))
             subtask_key = subtask.get("key")
             subtask_fields = subtask.get("fields", {})
 
@@ -268,7 +275,8 @@ class SLAChecker:
 
         excluded_statuses = {"closed", "resolved", "canceled"}
 
-        for ticket in source_tickets:
+        for idx, ticket in enumerate(source_tickets):
+            self._tick(idx + 1, len(source_tickets), ticket.get("key", ""))
             result = self._evaluate_ticket(ticket, sla_config)
 
             if not result.target_ticket:
@@ -314,7 +322,8 @@ class SLAChecker:
 
         excluded_statuses = {"closed", "resolved", "canceled"}
 
-        for ticket in source_tickets:
+        for idx, ticket in enumerate(source_tickets):
+            self._tick(idx + 1, len(source_tickets), ticket.get("key", ""))
             result = self._evaluate_ticket_resolution(ticket, sla_config)
 
             if not result.target_ticket:
@@ -358,7 +367,8 @@ class SLAChecker:
 
         self._log(f"[First Response SLA] Tickets returned from Jira: {len(source_tickets)}", "green")
 
-        for ticket in source_tickets:
+        for idx, ticket in enumerate(source_tickets):
+            self._tick(idx + 1, len(source_tickets), ticket.get("key", ""))
             ticket_key = ticket.get("key")
             ticket_fields = ticket.get("fields", {})
 
