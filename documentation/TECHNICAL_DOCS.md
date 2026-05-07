@@ -189,6 +189,10 @@ The core business logic layer. Queries Jira via `JiraClient` and returns `SLASum
 - `log_collector`: optional list; when provided, every `_log` call appends a dict `{"level", "message", "time"}` to this list in addition to (or instead of) printing to the terminal. Used by the Streamlit app to populate the Log tab.
 - `progress_callback`: optional callable `(current: int, total: int, ticket_key: str) -> None`; called once per ticket at the start of processing. The Streamlit app uses this to drive the live status display (current ticket, ticket N of M, running tally). After construction the callback can be swapped by reassigning `checker.progress_callback` between SLA checks.
 
+#### `set_field_id(field_name, field_id)`
+
+Sets a custom Jira field ID by name (e.g. `"health_plan"`, `"category"`). Called by `main.py` after construction to wire up the field IDs from `JIRA_FIELDS`. Overwrites the default value from `config.py` for that field name.
+
 #### `_date_filter_jql()`
 
 Builds the JQL suffix appended to every query. Always excludes cancelled tickets. Appends `created >= ...` and/or `created <= ...` clauses if a date range is set.
@@ -219,7 +223,7 @@ Builds the JQL suffix appended to every query. Always excludes cancelled tickets
 
 **SLA 3 — Resolution of Configuration Issues (target: 60 business days)**
 
-Same logic as SLA 2, but looks for LPM tickets that reached any of: `"Deployed to UAT"`, `"Waiting for UAT Signoff"`, or `"Done"`.
+Same logic as SLA 2, but looks for LPM tickets that reached any of: `"Deployed to UAT"`, `"Waiting for Client UAT/Signoff"`, or `"Done"`.
 
 #### `check_impact_report_delivery()` → `SLASummary`
 
@@ -250,7 +254,7 @@ The browser-based UI. Built with Streamlit and Plotly. This is what users intera
 
 #### Session State
 
-Three keys are persisted across reruns (e.g. when a user checks a checkbox):
+The following keys are persisted across reruns (e.g. when a user checks a checkbox):
 
 | Key | Type | Purpose |
 |---|---|---|
@@ -441,7 +445,7 @@ Run with `--verbose` (`-v`) to see JQL queries, field values, and per-ticket pro
 |---|---|---|---|---|
 | 1 | Time to First Response | ACS ticket created | First public comment on ACS ticket | 2 business days |
 | 2 | Identification of Resolution | ACS ticket created | Linked LPM ticket reaches "Ready for Config" | 30 business days |
-| 3 | Resolution of Configuration Issues | ACS ticket created | Linked LPM ticket reaches "Deployed to UAT", "Waiting for UAT Signoff", or "Done" | 60 business days |
+| 3 | Resolution of Configuration Issues | ACS ticket created | Linked LPM ticket reaches "Deployed to UAT", "Waiting for Client UAT/Signoff", or "Done" | 60 business days |
 | 4 | Impact Report Delivery | SR sub-task created | Public comment containing "impact report" on linked ACS ticket | 30 business days |
 
 All measurements use business days (Monday–Friday). Weekends are excluded. Public holidays are not currently excluded.

@@ -90,7 +90,7 @@ def display_sla_dashboard(summary: SLASummary):
             "Showing all LA Blue ACS tickets and their linked LPM tickets. "
             "Tickets without an LPM link that are closed, resolved, or canceled are excluded. "
             "Days = ACS creation → first time the linked LPM ticket reached 'Deployed to UAT', "
-            "'Waiting for UAT Signoff', or 'Done' status (or to today if not yet reached)."
+            "'Waiting for Client UAT/Signoff', or 'Done' status (or to today if not yet reached)."
         )
     else:
         desc_text = ""

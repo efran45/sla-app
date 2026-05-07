@@ -8,7 +8,7 @@ Tracks SLA compliance for LA Blue healthcare tickets across three Jira projects 
 |---|------|----------|--------|
 | 1 | Time to First Response | ACS ticket created → first public comment posted | 2 business days |
 | 2 | Identification of Resolution | ACS ticket created → linked LPM ticket reaches "Ready for Config" | 30 business days |
-| 3 | Resolution of Configuration Issues | ACS ticket created → linked LPM ticket reaches "Deployed to UAT", "Waiting for UAT Signoff", or "Done" | 60 business days |
+| 3 | Resolution of Configuration Issues | ACS ticket created → linked LPM ticket reaches "Deployed to UAT", "Waiting for Client UAT/Signoff", or "Done" | 60 business days |
 | 4 | Impact Report Delivery | SR sub-task created → public comment containing "impact report" on the linked ACS ticket | 30 business days |
 
 All measurements use business days (Monday–Friday). Weekends are excluded.
